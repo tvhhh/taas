@@ -1,25 +1,33 @@
 import argparse
+import numpy as np
 import re
 
 from datasets import load_dataset, set_caching_enabled
 from rouge_score import rouge_scorer
 
 import nltk
-# from nltk.corpus import stopwords
-# from nltk.tokenize import word_tokenize
-
-import numpy as np
+nltk.download("punkt")
+nltk.download("stopwords")
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
 
 
 SUS_INPUT_PREFIX = "sus-formatted"
 EXT_LABEL_PREFIX = "extractive"
 
 
-# stop_words = set(stopwords.words("english"))
-# def _remove_stop_words(src):
-#     word_tokens = word_tokenize(src)
-#     processed_tokens = [w.lower() for w in word_tokens if w.lower() not in stop_words]
-#     return processed_tokens
+stop_words = set(stopwords.words("english"))
+def _preprocess_corpus(src):
+    # Remove special characters
+    src = re.sub(r"[^a-zA-Z0-9 ]", "", src)
+    
+    # Remove stop words
+    words = word_tokenize(src)
+    words = [w.lower() for w in words if w.lower() not in stop_words]
+
+    processed_txt = " ".join(words)
+
+    return processed_txt
 
 
 def _format_to_sus(src, cls_token="<cls>", sep_token="<sep>"):
@@ -36,7 +44,7 @@ def _greedy_select_extractive_label(src, tgt, summary_size=3, metrics=["rouge1",
     sents = nltk.sent_tokenize(src)
     sents = [_rouge_clean(s) for s in sents]
     
-    scorer = rouge_scorer.RougeScorer([metrics], use_stemmer=False)
+    scorer = rouge_scorer.RougeScorer(metrics, use_stemmer=False)
     def _cal_sent_score(tgt, src):
         scores = scorer.score(tgt, src)
         return sum(scores[m].fmeasure for m in scores.keys())
@@ -60,19 +68,19 @@ def _greedy_select_extractive_label(src, tgt, summary_size=3, metrics=["rouge1",
     return selected
 
 
-def preprocess(dataset, input_name, label_name):
-    # preprocessed_words = map(
-    #     lambda src: _remove_stop_words(src),
-    #     dataset[input_name]
-    # )
-    # dataset = dataset.add_column(f"corpus", list(preprocessed_words))
+def preprocess(dataset, input_name, label_name): 
+    corpus = map(
+        lambda src: _preprocess_corpus(src),
+        dataset[input_name]
+    )
+    dataset = dataset.add_column(f"corpus", list(corpus))
 
     formatted_input = map(
         lambda src: _format_to_sus(src),
         dataset[input_name]
     )
     dataset = dataset.add_column(f"{SUS_INPUT_PREFIX} {input_name}", list(formatted_input))
-    
+
     ext_labels = map(
         lambda src, tgt: _greedy_select_extractive_label(src, tgt),
         dataset[input_name],
@@ -91,7 +99,7 @@ if __name__ == "__main__":
     parser.add_argument("-dataset_name", type=str, default="3.0.0")
     parser.add_argument("-input_name", type=str, default="article")
     parser.add_argument("-label_name", type=str, default="highlights")
-    parser.add_argument("-output_dir", type=str, default=".")
+    parser.add_argument("-output_dir", type=str, default="data/cnndm")
 
     args = parser.parse_args()
 
