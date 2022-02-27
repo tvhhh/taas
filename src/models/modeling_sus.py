@@ -491,7 +491,10 @@ class SusForExtractiveSummarization(SusPreTrainedModel):
         def _get_clss_and_cls_mask(input_ids):
             clss_ids = torch.where(input_ids == self.config.cls_token_id)[0].long()
             pad_size = max_sentence_length - len(clss_ids)
-            clss_ids = torch.cat((clss_ids, torch.full((pad_size,), -1, dtype=torch.long, device=self.device, requires_grad=False)))
+            if pad_size >= 0:
+                clss_ids = torch.cat((clss_ids, torch.full((pad_size,), -1, dtype=torch.long, device=self.device, requires_grad=False)))
+            else:
+                clss_ids = clss_ids[:max_sentence_length]
             cls_mask = torch.where(clss_ids == -1, 0, 1)
             return clss_ids.unsqueeze(0), cls_mask.unsqueeze(0)
         
