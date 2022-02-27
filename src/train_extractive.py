@@ -10,6 +10,15 @@ SUS_INPUT_PREFIX = "sus-formatted"
 EXT_LABEL_PREFIX = "extractive"
 
 
+def _prepare_layers_for_distill(teacher_layers, student_layers):
+    if student_layers > teacher_layers:
+        raise ValueError("Student model must be smaller than teacher model.")
+    step = int(round(teacher_layers / student_layers))
+    layers = list(range(0, step * student_layers, step))
+    layers[-1] = teacher_layers - 1
+    return tuple(layers)
+
+
 def _prepare_data(
     dataset,
     tokenizer,
@@ -79,11 +88,26 @@ def train_ext(args, tokenizer, dataset, train):
             cls_token_id=tokenizer.cls_token_id,
             sep_token_id=tokenizer.sep_token_id,
         )
+        
+        copied_encoder_layers = None
+        copied_decoder_layers = None
+        if args.distill_pegasus:
+            copied_encoder_layers = _prepare_layers_for_distill(
+                16, args.copied_encoder_layers
+            )
+            copied_decoder_layers = _prepare_layers_for_distill(
+                16, args.copied_decoder_layers
+            )
+
         sus = SusForExtractiveSummarization(
             config,
             pretrained_pegasus_path=args.pretrained_pegasus_path,
+            distill_pegasus=args.distill_pegasus,
+            copied_encoder_layers=copied_encoder_layers,
+            copied_decoder_layers=copied_decoder_layers,
         )
-        if args.pretrained_pegasus_path is not None:
+        
+        if args.add_special_tokens:
             sus.resize_token_embeddings(len(tokenizer))
     
     train_set, eval_set = (
@@ -96,6 +120,10 @@ def train_ext(args, tokenizer, dataset, train):
         for s in ["train", "validation"]
     )
 
+    compute_metrics = None
+    if args.compute_metrics:
+        compute_metrics = lambda p: _compute_metrics(p, args.ext_summary_size)
+    
     train(
         args=args,
         model=sus,
@@ -103,5 +131,5 @@ def train_ext(args, tokenizer, dataset, train):
         train_set=train_set,
         eval_set=eval_set,
         tokenizer=tokenizer,
-        compute_metrics=lambda p: _compute_metrics(p, args.ext_summary_size)
+        compute_metrics=compute_metrics,
     )

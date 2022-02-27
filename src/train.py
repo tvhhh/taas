@@ -71,6 +71,9 @@ if __name__ == "__main__":
 
     parser.add_argument("-pretrained_model_path", type=str, default=None)
     parser.add_argument("-pretrained_pegasus_path", type=str, default="google/pegasus-large")
+    parser.add_argument("-distill_pegasus", type=str2bool, default=False)
+    parser.add_argument("-copied_encoder_layers", type=int, default=16)
+    parser.add_argument("-copied_decoder_layers", type=int, default=4)
     parser.add_argument("-pretrained_tokenizer_path", type=str, default=None)
     parser.add_argument("-add_special_tokens", type=str2bool, nargs="?", default=True)
 
@@ -103,6 +106,7 @@ if __name__ == "__main__":
     parser.add_argument("-metric_load_best", type=str, default="loss")
     parser.add_argument("-greater_better", type=str2bool, nargs="?", default=False)
     parser.add_argument("-from_checkpoint", type=str, default=None)
+    parser.add_argument("-compute_metrics", type=str2bool, default=True)
 
     parser.add_argument("-output_dir", type=str, default="./checkpoints")
     parser.add_argument("-logging_dir", type=str, default="./logs")

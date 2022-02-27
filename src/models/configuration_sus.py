@@ -41,7 +41,6 @@ class SusConfig(PretrainedConfig):
         decoder_start_token_id=0,
         classifier_dropout=0.0,
         scale_embedding=False,
-        distill_pegasus=False,
         bow_size=96105,
         vae_hidden_dims=(1024,512,256),
         topic_dim=100,
@@ -77,7 +76,6 @@ class SusConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.num_hidden_layers = encoder_layers
         self.scale_embedding = scale_embedding
-        self.distill_pegasus = distill_pegasus
         self.bow_size = bow_size
         self.vae_hidden_dims = vae_hidden_dims
         self.topic_dim = topic_dim
