@@ -25,6 +25,7 @@ def _prepare_data(
     input_name,
     label_name,
     max_target_length=128,
+    samples=None,
 ):
     required_attrs = [f"{SUS_INPUT_PREFIX} {input_name}", f"{EXT_LABEL_PREFIX} {label_name}"]
     for attr in required_attrs:
@@ -49,7 +50,10 @@ def _prepare_data(
         ))
         return model_inputs
 
-    return dataset.map(_process_data, batched=True)
+    if samples is not None:
+        return dataset.shuffle(seed=0).select(range(samples)).map(_process_data, batched=True)
+    else:
+        return dataset.map(_process_data, batched=True)
 
 
 def _compute_metrics(p, summary_size=3):
@@ -116,7 +120,8 @@ def train_ext(args, tokenizer, dataset, train):
             tokenizer,
             args.data_input_name,
             args.data_label_name,
-            args.max_sentence_length)
+            args.max_sentence_length,
+            args.train_samples if s == "train" else args.eval_samples)
         for s in ["train", "validation"]
     )
 

@@ -28,6 +28,7 @@ def _prepare_data(
     label_name,
     max_input_length=1024,
     max_target_length=128,
+    samples=None,
 ):
     required_attrs = [f"{SUS_INPUT_PREFIX} {input_name}"]
     for attr in required_attrs:
@@ -49,7 +50,10 @@ def _prepare_data(
         model_inputs["labels"] = labels["input_ids"]
         return model_inputs
 
-    return dataset.map(_process_data, batched=True)
+    if samples is not None:
+        return dataset.shuffle(seed=0).select(range(samples)).map(_process_data, batched=True)
+    else:
+        return dataset.map(_process_data, batched=True)
 
 
 rouge = None
@@ -112,7 +116,8 @@ def train_abs(args, tokenizer, dataset, train):
             tokenizer,
             args.data_input_name,
             args.data_label_name,
-            args.max_sentence_length)
+            args.max_sentence_length,
+            args.train_samples if s == "train" else args.eval_samples)
         for s in ["train", "validation"]
     )
 

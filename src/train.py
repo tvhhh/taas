@@ -70,6 +70,10 @@ if __name__ == "__main__":
     parser.add_argument("-data_input_name", type=str, default="article")
     parser.add_argument("-data_label_name", type=str, default="highlights")
 
+    parser.add_argument("-train_samples", type=int, default=None)
+    parser.add_argument("-eval_samples", type=int, default=None)
+    parser.add_argument("-test_samples", type=int, default=None)
+
     parser.add_argument("-pretrained_model_path", type=str, default=None)
     parser.add_argument("-pretrained_pegasus_path", type=str, default="google/pegasus-large")
     parser.add_argument("-distill_pegasus", type=str2bool, default=False)
