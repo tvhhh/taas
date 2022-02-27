@@ -11,10 +11,10 @@ from transformers.models.pegasus.modeling_pegasus import PegasusEncoder, Pegasus
 from .configuration_sus import SusConfig
 
 
-def _prepare_layer_ids_for_distill(teacher_layers, student_layers):
+def _prepare_layer_ids_for_distillation(teacher_layers, student_layers):
     if student_layers > teacher_layers:
         raise ValueError("Student model must be smaller than teacher model.")
-    step = int(round(teacher_layers / student_layers))
+    step = int(round((teacher_layers-1) / (student_layers-1)))
     layers = list(range(0, step * student_layers, step))
     layers[-1] = teacher_layers - 1
     return tuple(layers)
@@ -177,7 +177,7 @@ class SusEncoder(SusPreTrainedModel):
         if from_pretrained_pegasus is not None:
             self.pegasus_encoder = from_pretrained_pegasus
             if distill_pegasus and copied_layers is not None and copied_layers > 0:
-                layer_ids = _prepare_layer_ids_for_distill(
+                layer_ids = _prepare_layer_ids_for_distillation(
                     from_pretrained_pegasus.config.encoder_layers,
                     copied_layers,
                 )
@@ -230,7 +230,7 @@ class SusDecoder(SusPreTrainedModel):
         if from_pretrained_pegasus is not None:
             self.pegasus_decoder = from_pretrained_pegasus
             if distill_pegasus and copied_layers is not None and copied_layers > 0:
-                layer_ids = _prepare_layer_ids_for_distill(
+                layer_ids = _prepare_layer_ids_for_distillation(
                     from_pretrained_pegasus.config.encoder_layers,
                     copied_layers,
                 )
