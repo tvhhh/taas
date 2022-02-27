@@ -87,7 +87,7 @@ def train_ext(args, tokenizer, dataset, train):
         config = SusConfig(
             stacked_encoder_type=args.stacked_encoder_type,
             stacked_layers=args.stacked_layers,
-            stacked_ffn_dim=args.stacked_ffn_fim,
+            stacked_ffn_dim=args.stacked_ffn_dim,
             stacked_attention_heads=args.stacked_attention_heads,
             cls_token_id=tokenizer.cls_token_id,
             sep_token_id=tokenizer.sep_token_id,
