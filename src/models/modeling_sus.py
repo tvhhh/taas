@@ -11,6 +11,15 @@ from transformers.models.pegasus.modeling_pegasus import PegasusEncoder, Pegasus
 from .configuration_sus import SusConfig
 
 
+def _prepare_layer_ids_for_distill(teacher_layers, student_layers):
+    if student_layers > teacher_layers:
+        raise ValueError("Student model must be smaller than teacher model.")
+    step = int(round(teacher_layers / student_layers))
+    layers = list(range(0, step * student_layers, step))
+    layers[-1] = teacher_layers - 1
+    return tuple(layers)
+
+
 def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
     """
     Shift input ids one token to the right.
@@ -161,15 +170,19 @@ class SusEncoder(SusPreTrainedModel):
         embed_tokens: Optional[nn.Embedding] = None,
         from_pretrained_pegasus: Optional[PegasusEncoder] = None,
         distill_pegasus: Optional[bool] = False,
-        copied_layers: Optional[Tuple[int]] = None,
+        copied_layers: Optional[int] = None,
     ):
         super().__init__(config)
 
         if from_pretrained_pegasus is not None:
             self.pegasus_encoder = from_pretrained_pegasus
-            if distill_pegasus and copied_layers is not None and len(copied_layers) > 0:
+            if distill_pegasus and copied_layers is not None and copied_layers > 0:
+                layer_ids = _prepare_layer_ids_for_distill(
+                    from_pretrained_pegasus.config.encoder_layers,
+                    copied_layers,
+                )
                 self.pegasus_encoder.layers = nn.ModuleList([
-                    from_pretrained_pegasus.layers[i] for i in copied_layers
+                    from_pretrained_pegasus.layers[i] for i in layer_ids
                 ])
 
         else:
@@ -210,15 +223,19 @@ class SusDecoder(SusPreTrainedModel):
         embed_tokens: Optional[nn.Embedding] = None,
         from_pretrained_pegasus: Optional[PegasusDecoder] = None,
         distill_pegasus: Optional[bool] = False,
-        copied_layers: Optional[Tuple[int]] = None,
+        copied_layers: Optional[int] = None,
     ):
         super().__init__(config)
 
         if from_pretrained_pegasus is not None:
             self.pegasus_decoder = from_pretrained_pegasus
-            if distill_pegasus and copied_layers is not None and len(copied_layers) > 0:
-                self.pegasus_decoder.layers = nn.ModuleList([
-                    from_pretrained_pegasus.layers[i] for i in copied_layers
+            if distill_pegasus and copied_layers is not None and copied_layers > 0:
+                layer_ids = _prepare_layer_ids_for_distill(
+                    from_pretrained_pegasus.config.encoder_layers,
+                    copied_layers,
+                )
+                self.pegasus_encoder.layers = nn.ModuleList([
+                    from_pretrained_pegasus.layers[i] for i in layer_ids
                 ])
 
         else:
@@ -268,8 +285,8 @@ class SusModel(SusPreTrainedModel):
         config: SusConfig,
         pretrained_pegasus_path: Optional[str] = None,
         distill_pegasus: Optional[bool] = False,
-        copied_encoder_layers: Optional[Tuple[int]] = None,
-        copied_decoder_layers: Optional[Tuple[int]] = None,
+        copied_encoder_layers: Optional[int] = None,
+        copied_decoder_layers: Optional[int] = None,
         *from_pretrained_args,
         **from_pretrained_kwargs,
     ):
@@ -284,10 +301,10 @@ class SusModel(SusPreTrainedModel):
             config.copy_pegasus_config(pegasus.config)
             
             if distill_pegasus:
-                if copied_encoder_layers is not None and len(copied_encoder_layers) > 0:
-                    config.encoder_layers = len(copied_encoder_layers)
-                if copied_decoder_layers is not None and len(copied_decoder_layers) > 0:
-                    config.decoder_layers = len(copied_decoder_layers)
+                if copied_encoder_layers is not None and copied_encoder_layers > 0:
+                    config.encoder_layers = copied_encoder_layers
+                if copied_decoder_layers is not None and copied_decoder_layers > 0:
+                    config.decoder_layers = copied_decoder_layers
             
             self.shared_embed = pegasus.get_input_embeddings()
             

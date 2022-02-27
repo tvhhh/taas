@@ -10,15 +10,6 @@ SUS_INPUT_PREFIX = "sus-formatted"
 EXT_LABEL_PREFIX = "extractive"
 
 
-def _prepare_layers_for_distill(teacher_layers, student_layers):
-    if student_layers > teacher_layers:
-        raise ValueError("Student model must be smaller than teacher model.")
-    step = int(round(teacher_layers / student_layers))
-    layers = list(range(0, step * student_layers, step))
-    layers[-1] = teacher_layers - 1
-    return tuple(layers)
-
-
 def _prepare_data(
     dataset,
     tokenizer,
@@ -96,12 +87,8 @@ def train_ext(args, tokenizer, dataset, train):
         copied_encoder_layers = None
         copied_decoder_layers = None
         if args.distill_pegasus:
-            copied_encoder_layers = _prepare_layers_for_distill(
-                16, args.copied_encoder_layers
-            )
-            copied_decoder_layers = _prepare_layers_for_distill(
-                16, args.copied_decoder_layers
-            )
+            copied_encoder_layers = args.copied_encoder_layers
+            copied_decoder_layers = args.copied_decoder_layers
 
         sus = SusForExtractiveSummarization(
             config,
