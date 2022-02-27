@@ -32,6 +32,7 @@ def train(args, model, data_collator, train_set, eval_set, tokenizer, compute_me
         adam_beta2=args.beta2,
         adam_epsilon=args.epsilon,
         num_train_epochs=args.train_epochs,
+        max_steps=args.train_steps,
         warmup_ratio=args.warmup_ratio,
         logging_dir=args.logging_dir,
         logging_strategy=args.logging_strategy,
@@ -95,7 +96,8 @@ if __name__ == "__main__":
     parser.add_argument("-save_checkpoint_strategy", type=str, choices=["no", "epoch", "steps"], default="epoch")
     parser.add_argument("-save_checkpoint_steps", type=int, default=5)
     parser.add_argument("-batch_size", type=int, default=1024)
-    parser.add_argument("-train_epochs", type=int, default=128)
+    parser.add_argument("-train_epochs", type=int, default=5)
+    parser.add_argument("-train_steps", type=int, default=-1)
     parser.add_argument("-lr", type=float, default=1e-5)
     parser.add_argument("-beta1", type=float, default=0.9)
     parser.add_argument("-beta2", type=float, default=0.999)
