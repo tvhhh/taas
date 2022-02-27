@@ -28,63 +28,63 @@ def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start
     return shifted_input_ids
 
 
-class SusNeuralTopicModel(nn.Module):
-    def __init__(self, config: SusConfig):
-        super().__init__()
+# class SusNeuralTopicModel(nn.Module):
+#     def __init__(self, config: SusConfig):
+#         super().__init__()
 
-        self.config = config
+#         self.config = config
 
-        encoder_dims = config.vae_hidden_dims
-        decoder_dims = config.vae_hidden_dims[::-1]
-        self.encoder = nn.ModuleList([
-            nn.Linear(encoder_dims[i-1] if i > 1 else config.bow_size, encoder_dims[i])
-            for i in range(len(encoder_dims))
-        ])
-        self.fc_mu = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
-        self.fc_log_var = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
-        self.fc = nn.Linear(config.topic_dim, config.topic_dim)
-        self.decoder = nn.ModuleList([nn.Linear(config.topic_dim, decoder_dims[0])] + [
-            nn.Linear(decoder_dims[i], decoder_dims[i+1] if i < len(decoder_dims)-1 else config.bow_size)
-            for i in range(len(decoder_dims))
-        ])
+#         encoder_dims = config.vae_hidden_dims
+#         decoder_dims = config.vae_hidden_dims[::-1]
+#         self.encoder = nn.ModuleList([
+#             nn.Linear(encoder_dims[i-1] if i > 1 else config.bow_size, encoder_dims[i])
+#             for i in range(len(encoder_dims))
+#         ])
+#         self.fc_mu = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
+#         self.fc_log_var = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
+#         self.fc = nn.Linear(config.topic_dim, config.topic_dim)
+#         self.decoder = nn.ModuleList([nn.Linear(config.topic_dim, decoder_dims[0])] + [
+#             nn.Linear(decoder_dims[i], decoder_dims[i+1] if i < len(decoder_dims)-1 else config.bow_size)
+#             for i in range(len(decoder_dims))
+#         ])
     
-    def reparameterize(self, mu, log_var):
-        std = torch.exp(log_var * 0.5)
-        eps = torch.randn_like(std, requires_grad=False)
-        return eps.mul(std).add_(mu)
+#     def reparameterize(self, mu, log_var):
+#         std = torch.exp(log_var * 0.5)
+#         eps = torch.randn_like(std, requires_grad=False)
+#         return eps.mul(std).add_(mu)
    
-    def encode(self, x):
-        h = x
-        for layer in self.encoder:
-            h = torch.tanh(layer(x))
+#     def encode(self, x):
+#         h = x
+#         for layer in self.encoder:
+#             h = torch.tanh(layer(x))
         
-        mu = self.fc_mu(h)
-        log_var = self.fc_log_var(h)
+#         mu = self.fc_mu(h)
+#         log_var = self.fc_log_var(h)
         
-        z = self.reparameterize(mu, log_var)
-        return z, mu, log_var
+#         z = self.reparameterize(mu, log_var)
+#         return z, mu, log_var
 
-    def decode(self, z):
-        h = z
-        for layer in self.decoder:
-            h = F.relu(layer(h))
-        return h
+#     def decode(self, z):
+#         h = z
+#         for layer in self.decoder:
+#             h = F.relu(layer(h))
+#         return h
 
-    def forward(self, x):
-        z, mu, log_var = self.encode(x)
+#     def forward(self, x):
+#         z, mu, log_var = self.encode(x)
         
-        theta = self.fc(z)
-        theta = torch.softmax(theta, dim=1)
+#         theta = self.fc(z)
+#         theta = torch.softmax(theta, dim=1)
         
-        x_recons = self.decode(theta)
-        logsoftmax = torch.log_softmax(x_recons, dim=1)
-        rec_loss = -1.0 * torch.sum(x * logsoftmax)
+#         x_recons = self.decode(theta)
+#         logsoftmax = torch.log_softmax(x_recons, dim=1)
+#         rec_loss = -1.0 * torch.sum(x * logsoftmax)
 
-        kl_div = -0.5 * torch.sum(1 + log_var - mu**2 - torch.exp(log_var))
+#         kl_div = -0.5 * torch.sum(1 + log_var - mu**2 - torch.exp(log_var))
 
-        loss = (rec_loss + kl_div) / x.size(0)
+#         loss = (rec_loss + kl_div) / x.size(0)
 
-        return loss, x_recons, theta
+#         return loss, x_recons, theta
 
 
 class SusPreTrainedModel(PreTrainedModel):

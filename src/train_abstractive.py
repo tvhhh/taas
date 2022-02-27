@@ -31,16 +31,13 @@ def _prepare_data(
             max_length=max_input_length,
             truncation=True
         )
-
         with tokenizer.as_target_tokenizer():
             labels = tokenizer(
                 examples[label_name],
                 max_length=max_target_length,
                 truncation=True
             )
-        
         model_inputs["labels"] = labels["input_ids"]
-        
         return model_inputs
 
     return dataset.map(_process_data, batched=True)

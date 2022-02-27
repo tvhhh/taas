@@ -6,24 +6,38 @@ from datasets import load_dataset, set_caching_enabled
 from rouge_score import rouge_scorer
 
 import nltk
-nltk.download("punkt")
-nltk.download("stopwords")
-from nltk.corpus import stopwords
+nltk.download('averaged_perceptron_tagger')
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('wordnet')
+from nltk.corpus import stopwords, wordnet
 from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
+from nltk import pos_tag
+from collections import defaultdict
 
 
 SUS_INPUT_PREFIX = "sus-formatted"
 EXT_LABEL_PREFIX = "extractive"
 
 
-stop_words = set(stopwords.words("english"))
 def _preprocess_corpus(src):
     # Remove special characters
     src = re.sub(r"[^a-zA-Z0-9 ]", "", src)
     
     # Remove stop words
+    stop_words = set(stopwords.words("english"))
     words = word_tokenize(src)
     words = [w.lower() for w in words if w.lower() not in stop_words]
+
+    # Lemmatize
+    tag_map = defaultdict(lambda : wordnet.NOUN)
+    tag_map['J'] = wordnet.ADJ
+    tag_map['V'] = wordnet.VERB
+    tag_map['R'] = wordnet.ADV
+
+    lmtz = WordNetLemmatizer()
+    words = [lmtz.lemmatize(word, tag_map[tag[0]]) for word, tag in pos_tag(words)]
 
     processed_txt = " ".join(words)
 

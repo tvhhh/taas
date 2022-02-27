@@ -4,8 +4,14 @@ from transformers.models.pegasus.configuration_pegasus import PegasusConfig
 
 class SusConfig(PretrainedConfig):
     keys_to_ignore_at_inference = ["past_key_values"]
-    attribute_map = {"num_attention_heads": "encoder_attention_heads", "hidden_size": "d_model"}
-    const_attr = ["vocab_size", "max_position_embeddings"]
+    attribute_map = {
+        "num_attention_heads": "encoder_attention_heads",
+        "hidden_size": "d_model",
+    }
+    const_attr = [
+        "vocab_size",
+        "max_position_embeddings",
+    ]
     
     def __init__(
         self,
@@ -35,10 +41,10 @@ class SusConfig(PretrainedConfig):
         decoder_start_token_id=0,
         classifier_dropout=0.0,
         scale_embedding=False,
+        distill_pegasus=False,
         bow_size=96105,
-        vae_hidden_dims=[512,256],
+        vae_hidden_dims=(1024,512,256),
         topic_dim=100,
-        norm_flows=4,
         pad_token_id=0,
         eos_token_id=1,
         cls_token_id=96103,
@@ -71,10 +77,10 @@ class SusConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.num_hidden_layers = encoder_layers
         self.scale_embedding = scale_embedding
+        self.distill_pegasus = distill_pegasus
         self.bow_size = bow_size
         self.vae_hidden_dims = vae_hidden_dims
         self.topic_dim = topic_dim
-        self.norm_flows = norm_flows
         self.cls_token_id = cls_token_id
         super().__init__(
             pad_token_id=pad_token_id,
@@ -92,7 +98,6 @@ class SusConfig(PretrainedConfig):
         config_dict.pop("bow_size", None)
         config_dict.pop("vae_hidden_dim", None)
         config_dict.pop("topic_dim", None)
-        config_dict.pop("norm_flows", None)
         config_dict.pop("cls_token_id", None)
         config_dict.pop("sep_token_id", None)
 

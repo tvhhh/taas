@@ -32,7 +32,7 @@ def train(args, model, data_collator, train_set, eval_set, tokenizer, compute_me
         adam_beta2=args.beta2,
         adam_epsilon=args.epsilon,
         num_train_epochs=args.train_epochs,
-        warmup_ratio=args.warmumodel_type_ratio,
+        warmup_ratio=args.warmup_ratio,
         logging_dir=args.logging_dir,
         logging_strategy=args.logging_strategy,
         logging_steps=args.logging_steps,

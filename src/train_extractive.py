@@ -28,16 +28,17 @@ def _prepare_data(
             truncation=True,
         )
         def _process_ext_label(label, src):
-            tgt = [0] * len(src.count(tokenizer.cls_token))
+            tgt = [0] * src.count(tokenizer.cls_token)
             for l in label: tgt[l] = 1
             pad_size = max_target_length - len(tgt)
             tgt = tgt[:max_target_length] if pad_size < 0 else (tgt + pad_size*[-100])
             return tgt
         model_inputs["labels"] = list(map(
             _process_ext_label,
-            examples[f"{EXT_LABEL_PREFIX} {label_name}"]),
+            examples[f"{EXT_LABEL_PREFIX} {label_name}"],
             examples[f"{SUS_INPUT_PREFIX} {input_name}"],
-        )
+        ))
+        return model_inputs
 
     return dataset.map(_process_data, batched=True)
 
