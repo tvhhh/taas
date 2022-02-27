@@ -1,4 +1,3 @@
-import math
 from typing import Optional
 
 import torch
@@ -10,16 +9,6 @@ from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput, S
 from transformers.models.pegasus.modeling_pegasus import PegasusEncoder, PegasusDecoder, PegasusModel
 
 from .configuration_sus import SusConfig
-from .normalizing_flows import NormalizingFlows
-
-
-def log_standard_gaussian(x):
-    return torch.sum(-0.5 * math.log(2 * math.pi) - (x ** 2 + 1e-8) / 2, dim=-1)
-
-
-def log_gaussian(x, mu, log_var):
-    log_pdf = - 0.5 * math.log(2 * math.pi) - (log_var + 1e-8) / 2 - ((x - mu)**2 + 1e-8) / (2 * torch.exp(log_var))
-    return torch.sum(log_pdf, dim=-1)
 
 
 def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
@@ -39,7 +28,7 @@ def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start
     return shifted_input_ids
 
 
-class SusTopicModel(nn.Module):
+class SusNeuralTopicModel(nn.Module):
     def __init__(self, config: SusConfig):
         super().__init__()
 
@@ -47,18 +36,14 @@ class SusTopicModel(nn.Module):
 
         encoder_dims = config.vae_hidden_dims
         decoder_dims = config.vae_hidden_dims[::-1]
-
         self.encoder = nn.ModuleList([
             nn.Linear(encoder_dims[i-1] if i > 1 else config.bow_size, encoder_dims[i])
             for i in range(len(encoder_dims))
         ])
-        self.mu = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
-        self.log_var = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
-        
-        self.flows = NormalizingFlows(z_dim=config.topic_dim, n_flows=config.norm_flows)
+        self.fc_mu = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
+        self.fc_log_var = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
         self.fc = nn.Linear(config.topic_dim, config.topic_dim)
-
-        self.decoder = nn.ModuleList([
+        self.decoder = nn.ModuleList([nn.Linear(config.topic_dim, decoder_dims[0])] + [
             nn.Linear(decoder_dims[i], decoder_dims[i+1] if i < len(decoder_dims)-1 else config.bow_size)
             for i in range(len(decoder_dims))
         ])
@@ -67,24 +52,17 @@ class SusTopicModel(nn.Module):
         std = torch.exp(log_var * 0.5)
         eps = torch.randn_like(std, requires_grad=False)
         return eps.mul(std).add_(mu)
-    
-    def _kl_divergence(self, z_0, q_params, z_k, logdet_jacobians):
-        (mu, log_var) = q_params
-        q0 = log_gaussian(z_0, mu, log_var)
-        qz = q0 - logdet_jacobians
-        pz = log_standard_gaussian(z_k)
-        return torch.sum(pz - qz)
-    
+   
     def encode(self, x):
         h = x
         for layer in self.encoder:
             h = torch.tanh(layer(x))
         
-        _mu = self.mu(h)
-        _log_var = self.log_var(h)
+        mu = self.fc_mu(h)
+        log_var = self.fc_log_var(h)
         
-        z = self.reparameterize(_mu, _log_var)
-        return z, _mu, _log_var
+        z = self.reparameterize(mu, log_var)
+        return z, mu, log_var
 
     def decode(self, z):
         h = z
@@ -93,21 +71,20 @@ class SusTopicModel(nn.Module):
         return h
 
     def forward(self, x):
-        z_0, z_mu, z_log_var = self.encode(x)
-        z_k, logdet_jacobians = self.flows(z_0)
+        z, mu, log_var = self.encode(x)
         
-        kl = self._kl_divergence(z_0, (z_mu, z_log_var), z_k, logdet_jacobians)
+        theta = self.fc(z)
+        theta = torch.softmax(theta, dim=1)
         
-        _theta = self.fc(z_k)
-        _theta = torch.softmax(_theta, dim=1)
-        
-        x_recons = self.decode(_theta)
+        x_recons = self.decode(theta)
         logsoftmax = torch.log_softmax(x_recons, dim=1)
         rec_loss = -1.0 * torch.sum(x * logsoftmax)
 
-        loss = rec_loss + kl
+        kl_div = -0.5 * torch.sum(1 + log_var - mu**2 - torch.exp(log_var))
 
-        return loss, x_recons, _theta
+        loss = (rec_loss + kl_div) / x.size(0)
+
+        return loss, x_recons, theta
 
 
 class SusPreTrainedModel(PreTrainedModel):
