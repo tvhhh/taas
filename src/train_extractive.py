@@ -2,8 +2,8 @@ import numpy as np
 
 from sklearn.metrics import precision_recall_fscore_support, accuracy_score
 
-from .models.configuration_sus import SusConfig
-from .models.modeling_sus import SusForExtractiveSummarization
+from models.configuration_sus import SusConfig
+from models.modeling_sus import SusForExtractiveSummarization
 
 
 SUS_INPUT_PREFIX = "sus-formatted"

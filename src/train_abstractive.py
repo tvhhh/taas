@@ -5,8 +5,8 @@ from datasets import load_metric
 
 from transformers.data.data_collator import DataCollatorForSeq2Seq
 
-from .models.configuration_sus import SusConfig
-from .models.modeling_sus import SusForAbstractiveSummarization
+from models.configuration_sus import SusConfig
+from models.modeling_sus import SusForAbstractiveSummarization
 
 
 SUS_INPUT_PREFIX = "sus-formatted"
