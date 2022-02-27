@@ -234,7 +234,7 @@ class SusDecoder(SusPreTrainedModel):
                     from_pretrained_pegasus.config.encoder_layers,
                     copied_layers,
                 )
-                self.pegasus_encoder.layers = nn.ModuleList([
+                self.pegasus_decoder.layers = nn.ModuleList([
                     from_pretrained_pegasus.layers[i] for i in layer_ids
                 ])
 
