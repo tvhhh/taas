@@ -22,6 +22,7 @@ def str2bool(v):
 def train(args, model, data_collator, train_set, eval_set, tokenizer, compute_metrics=None):
     training_args = TrainingArguments(
         output_dir=args.output_dir,
+        overwrite_output_dir=(not args.from_checkpoint),
         evaluation_strategy=args.eval_strategy,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
@@ -43,7 +44,6 @@ def train(args, model, data_collator, train_set, eval_set, tokenizer, compute_me
         load_best_model_at_end=args.load_best_at_end,
         metric_for_best_model=args.metric_load_best,
         greater_is_better=args.greater_better,
-        resume_from_checkpoint=args.from_checkpoint,
     )
     trainer = Trainer(
         model=model,
@@ -54,8 +54,7 @@ def train(args, model, data_collator, train_set, eval_set, tokenizer, compute_me
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
     )
-    trainer.evaluate()
-    trainer.train()
+    trainer.train(resume_from_checkpoint=args.from_checkpoint)
 
 
 if __name__ == "__main__":
@@ -107,7 +106,7 @@ if __name__ == "__main__":
     parser.add_argument("-load_best_at_end", type=str2bool, nargs="?", default=True)
     parser.add_argument("-metric_load_best", type=str, default="loss")
     parser.add_argument("-greater_better", type=str2bool, nargs="?", default=False)
-    parser.add_argument("-from_checkpoint", type=str, default=None)
+    parser.add_argument("-from_checkpoint", type=str2bool, default=False)
     parser.add_argument("-compute_metrics", type=str2bool, default=True)
 
     parser.add_argument("-output_dir", type=str, default="./checkpoints")
