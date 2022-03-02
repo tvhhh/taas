@@ -1,24 +1,18 @@
 import argparse
-import numpy as np
 import re
 
 from datasets import load_dataset, set_caching_enabled
-from rouge_score import rouge_scorer
 
 import nltk
-nltk.download('averaged_perceptron_tagger')
-nltk.download('punkt')
-nltk.download('stopwords')
-nltk.download('wordnet')
-from nltk.corpus import stopwords, wordnet
-from nltk.tokenize import word_tokenize
-from nltk.stem import WordNetLemmatizer
+nltk.download("averaged_perceptron_tagger")
+nltk.download("punkt")
+nltk.download("stopwords")
+nltk.download("wordnet")
 from nltk import pos_tag
+from nltk.corpus import stopwords, wordnet
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize
 from collections import defaultdict
-
-
-SUS_INPUT_PREFIX = "sus-formatted"
-EXT_LABEL_PREFIX = "extractive"
 
 
 def _preprocess_corpus(src):
@@ -32,9 +26,9 @@ def _preprocess_corpus(src):
 
     # Lemmatize
     tag_map = defaultdict(lambda : wordnet.NOUN)
-    tag_map['J'] = wordnet.ADJ
-    tag_map['V'] = wordnet.VERB
-    tag_map['R'] = wordnet.ADV
+    tag_map["J"] = wordnet.ADJ
+    tag_map["V"] = wordnet.VERB
+    tag_map["R"] = wordnet.ADV
 
     lmtz = WordNetLemmatizer()
     words = [lmtz.lemmatize(word, tag_map[tag[0]]) for word, tag in pos_tag(words)]
@@ -44,64 +38,13 @@ def _preprocess_corpus(src):
     return processed_txt
 
 
-def _format_to_sus(src, cls_token="<cls>", sep_token="<sep>"):
-    sents = nltk.sent_tokenize(src)
-    joint_sents = f" {sep_token} {cls_token} ".join(sents)
-    text = f"{cls_token} {joint_sents} {sep_token}"
-    return text
-
-
-def _greedy_select_extractive_label(src, tgt, summary_size=3, metrics=["rouge1","rouge2"]):
-    def _rouge_clean(src):
-        return re.sub(r"[^a-zA-Z0-9 ]", "", src)
-    
-    sents = nltk.sent_tokenize(src)
-    sents = [_rouge_clean(s) for s in sents]
-    
-    scorer = rouge_scorer.RougeScorer(metrics, use_stemmer=False)
-    def _cal_sent_score(tgt, src):
-        scores = scorer.score(tgt, src)
-        return sum(scores[m].fmeasure for m in scores.keys())
-    
-    ext_sum = str()
-    selected = []
-    curr_score = 0
-    for _ in range(summary_size):
-        scores = [
-            0 if i in selected else
-            _cal_sent_score(tgt, " ".join([ext_sum, s]))
-            for i, s in enumerate(sents)
-        ]
-        max_score, selected_idx = np.max(scores), np.argmax(scores)
-        if max_score <= curr_score:
-            break
-        ext_sum = " ".join([ext_sum, sents[selected_idx]])
-        selected.append(selected_idx)
-        curr_score = max_score
-    
-    return selected
-
-
-def preprocess(dataset, input_name, label_name): 
+def preprocess(dataset, input_name):
     corpus = map(
         lambda src: _preprocess_corpus(src),
         dataset[input_name]
     )
-    dataset = dataset.add_column(f"corpus", list(corpus))
+    dataset = dataset.add_column("corpus", list(corpus))
 
-    formatted_input = map(
-        lambda src: _format_to_sus(src),
-        dataset[input_name]
-    )
-    dataset = dataset.add_column(f"{SUS_INPUT_PREFIX} {input_name}", list(formatted_input))
-
-    ext_labels = map(
-        lambda src, tgt: _greedy_select_extractive_label(src, tgt),
-        dataset[input_name],
-        dataset[label_name],
-    )
-    dataset = dataset.add_column(f"{EXT_LABEL_PREFIX} {label_name}", list(ext_labels))
-    
     return dataset
 
 
