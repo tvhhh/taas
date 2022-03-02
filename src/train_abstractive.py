@@ -6,10 +6,13 @@ from datasets import load_metric
 from transformers.data.data_collator import DataCollatorForSeq2Seq
 
 from models.configuration_sus import SusConfig
-from models.modeling_sus import SusForAbstractiveSummarization
+from models.modeling_sus import SusForConditionalGeneration
 
 
 SUS_INPUT_PREFIX = "sus-formatted"
+
+
+rouge = load_metric("rouge")
 
 
 def _prepare_data(
@@ -43,11 +46,7 @@ def _prepare_data(
     return dataset.map(_process_data, batched=True)
 
 
-rouge = None
 def _compute_metrics(p, tokenizer):
-    if rouge is None:
-        rouge = load_metric("rouge")
-    
     (logits, _), labels = p
     predictions = np.argmax(logits, axis=-1)
     decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
@@ -67,7 +66,7 @@ def _compute_metrics(p, tokenizer):
 def train_abs(args, tokenizer, dataset, train):
     sus = None
     if args.pretrained_model_path is not None:
-        sus = SusForAbstractiveSummarization.from_pretrained(args.pretrained_model_path)
+        sus = SusForConditionalGeneration.from_pretrained(args.pretrained_model_path)
     else:
         config = SusConfig(
             cls_token_id=tokenizer.cls_token_id,
@@ -80,10 +79,10 @@ def train_abs(args, tokenizer, dataset, train):
             copied_encoder_layers = args.copied_encoder_layers
             copied_decoder_layers = args.copied_decoder_layers
         
-        sus = SusForAbstractiveSummarization(
+        sus = SusForConditionalGeneration(
             config,
             pretrained_pegasus_path=args.pretrained_pegasus_path,
-            distill_pegasus=args.distill_pegasus,
+            shrink_pegasus_large=args.distill_pegasus,
             copied_encoder_layers=copied_encoder_layers,
             copied_decoder_layers=copied_decoder_layers,
         )

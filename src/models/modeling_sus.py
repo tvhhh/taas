@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from transformers.modeling_utils import PreTrainedModel
-from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput, Seq2SeqLMOutput, TokenClassifierOutput
+from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput, Seq2SeqLMOutput
 from transformers.models.pegasus.modeling_pegasus import PegasusEncoder, PegasusDecoder, PegasusModel
 
 from .configuration_sus import SusConfig
@@ -45,17 +45,22 @@ class SusNeuralTopicModel(nn.Module):
 
         encoder_dims = config.vae_hidden_dims
         decoder_dims = config.vae_hidden_dims[::-1]
+        
         self.encoder = nn.ModuleList([
-            nn.Linear(encoder_dims[i-1] if i > 1 else config.bow_size, encoder_dims[i])
+            nn.Linear(encoder_dims[i-1] if i > 0 else config.bow_size, encoder_dims[i])
             for i in range(len(encoder_dims))
         ])
+        
         self.fc_mu = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
-        self.fc_log_var = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
-        self.fc = nn.Linear(config.topic_dim, config.topic_dim)
+        self.fc_logvar = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
+        self.fc_theta = nn.Linear(config.topic_dim, config.topic_dim)
+        
         self.decoder = nn.ModuleList([nn.Linear(config.topic_dim, decoder_dims[0])] + [
             nn.Linear(decoder_dims[i], decoder_dims[i+1] if i < len(decoder_dims)-1 else config.bow_size)
             for i in range(len(decoder_dims))
         ])
+
+        self.dropout = nn.Dropout(p=config.vae_dropout)
     
     def reparameterize(self, mu, log_var):
         std = torch.exp(log_var * 0.5)
@@ -63,33 +68,44 @@ class SusNeuralTopicModel(nn.Module):
         return eps.mul(std).add_(mu)
    
     def encode(self, x):
-        h = x
+        hid = x
         for layer in self.encoder:
-            h = torch.tanh(layer(x))
+            hid = F.relu(self.dropout(layer(x)))
         
-        mu = self.fc_mu(h)
-        log_var = self.fc_log_var(h)
+        mu, logvar = self.fc_mu(hid), self.fc_logvar(hid)
         
-        z = self.reparameterize(mu, log_var)
-        return z, mu, log_var
+        return mu, logvar
 
     def decode(self, z):
-        h = z
-        for layer in self.decoder:
-            h = F.relu(layer(h))
-        return h
+        hid = z
+        for i, layer in enumerate(self.decoder):
+            hid = layer(hid)
+            if i < len(self.decoder) - 1:
+                hid = F.relu(layer(hid))
+        return hid
+    
+    def inference(self, x):
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
+        
+        theta = self.fc_theta(z)
+        theta = torch.softmax(theta, dim=1)
+
+        return theta
 
     def forward(self, x):
-        z, mu, log_var = self.encode(x)
+        mu, logvar = self.encode(x)
+        z = self.reparameterize(mu, logvar)
         
-        theta = self.fc(z)
+        theta = self.fc_theta(z)
         theta = torch.softmax(theta, dim=1)
         
         x_recons = self.decode(theta)
+        
         logsoftmax = torch.log_softmax(x_recons, dim=1)
         rec_loss = -1.0 * torch.sum(x * logsoftmax)
 
-        kl_div = -0.5 * torch.sum(1 + log_var - mu**2 - torch.exp(log_var))
+        kl_div = -0.5 * torch.sum(1 + logvar - mu**2 - torch.exp(logvar))
 
         loss = (rec_loss + kl_div) / x.size(0)
 
@@ -117,69 +133,22 @@ class SusPreTrainedModel(PreTrainedModel):
             module.gradient_checkpointing = value
 
 
-class SusLinearClassifier(SusPreTrainedModel):
-    def __init__(self, config: SusConfig):
-        super().__init__(config)
-
-        self.linear = nn.Linear(config.d_model, 1, bias=True)
-        self.sigmoid = nn.Sigmoid()
-    
-    def forward(
-        self,
-        inputs_embeds=None,
-        attention_mask=None,
-    ):
-        logits = self.sigmoid(self.linear(inputs_embeds))
-        logits = logits.squeeze(-1) * attention_mask
-
-        return logits
-
-
-class SusTransformerClassifier(SusPreTrainedModel):
-    def __init__(self, config: SusConfig):
-        super().__init__(config)
-
-        self.config = config
-
-        transformer_config = self.config.to_pegasus_config(is_stacked_layers=True)
-        self.encoder = PegasusEncoder(transformer_config)
-
-        self.linear = nn.Linear(self.config.d_model, 1, bias=True)
-        self.sigmoid = nn.Sigmoid()
-    
-    def forward(
-        self,
-        inputs_embeds=None,
-        attention_mask=None,
-    ):
-        outputs = self.encoder(
-            attention_mask=attention_mask,
-            inputs_embeds=inputs_embeds,
-        )
-
-        logits = self.sigmoid(self.linear(outputs[0]))
-        logits = logits.squeeze(-1) * attention_mask
-
-        return logits
-
-
 class SusEncoder(SusPreTrainedModel):
     def __init__(
         self,
         config: SusConfig,
         embed_tokens: Optional[nn.Embedding] = None,
         from_pretrained_pegasus: Optional[PegasusEncoder] = None,
-        distill_pegasus: Optional[bool] = False,
-        copied_layers: Optional[int] = None,
+        shrink_pegasus_large: Optional[bool] = False,
     ):
         super().__init__(config)
 
         if from_pretrained_pegasus is not None:
             self.pegasus_encoder = from_pretrained_pegasus
-            if distill_pegasus and copied_layers is not None and copied_layers > 0:
+            if shrink_pegasus_large:
                 layer_ids = _prepare_layer_ids_for_distillation(
                     from_pretrained_pegasus.config.encoder_layers,
-                    copied_layers,
+                    config.encoder_layers,
                 )
                 self.pegasus_encoder.layers = nn.ModuleList([
                     from_pretrained_pegasus.layers[i] for i in layer_ids
@@ -222,17 +191,16 @@ class SusDecoder(SusPreTrainedModel):
         config: SusConfig,
         embed_tokens: Optional[nn.Embedding] = None,
         from_pretrained_pegasus: Optional[PegasusDecoder] = None,
-        distill_pegasus: Optional[bool] = False,
-        copied_layers: Optional[int] = None,
+        shrink_pegasus_large: Optional[bool] = False,
     ):
         super().__init__(config)
 
         if from_pretrained_pegasus is not None:
             self.pegasus_decoder = from_pretrained_pegasus
-            if distill_pegasus and copied_layers is not None and copied_layers > 0:
+            if shrink_pegasus_large:
                 layer_ids = _prepare_layer_ids_for_distillation(
                     from_pretrained_pegasus.config.encoder_layers,
-                    copied_layers,
+                    config.decoder_layers,
                 )
                 self.pegasus_decoder.layers = nn.ModuleList([
                     from_pretrained_pegasus.layers[i] for i in layer_ids
@@ -284,9 +252,7 @@ class SusModel(SusPreTrainedModel):
         self,
         config: SusConfig,
         pretrained_pegasus_path: Optional[str] = None,
-        distill_pegasus: Optional[bool] = False,
-        copied_encoder_layers: Optional[int] = None,
-        copied_decoder_layers: Optional[int] = None,
+        shrink_pegasus_large: Optional[bool] = False,
         *from_pretrained_args,
         **from_pretrained_kwargs,
     ):
@@ -298,28 +264,20 @@ class SusModel(SusPreTrainedModel):
                 *from_pretrained_args,
                 **from_pretrained_kwargs
             )
-            config.copy_pegasus_config(pegasus.config)
-            
-            if distill_pegasus:
-                if copied_encoder_layers is not None and copied_encoder_layers > 0:
-                    config.encoder_layers = copied_encoder_layers
-                if copied_decoder_layers is not None and copied_decoder_layers > 0:
-                    config.decoder_layers = copied_decoder_layers
+            config.copy_pegasus_config(pegasus.config, shrink_pegasus_large)
             
             self.shared_embed = pegasus.get_input_embeddings()
             
             self.encoder = SusEncoder(
-                config,
+                config=config,
                 from_pretrained_pegasus=pegasus.get_encoder(),
-                distill_pegasus=distill_pegasus,
-                copied_layers=copied_encoder_layers,
+                shrink_pegasus_large=shrink_pegasus_large,
             )
             
             self.decoder = SusDecoder(
-                config,
+                config=config,
                 from_pretrained_pegasus=pegasus.get_decoder(),
-                distill_pegasus=distill_pegasus,
-                copied_layers=copied_decoder_layers,
+                shrink_pegasus_large=shrink_pegasus_large,
             )
         
         else:
@@ -416,14 +374,12 @@ class SusModel(SusPreTrainedModel):
         )
 
 
-class SusForExtractiveSummarization(SusPreTrainedModel):
+class SusForConditionalGeneration(SusPreTrainedModel):
     def __init__(
         self,
         config: SusConfig,
         pretrained_pegasus_path: Optional[str] = None,
-        distill_pegasus: Optional[bool] = False,
-        copied_encoder_layers: Optional[Tuple[int]] = None,
-        copied_decoder_layers: Optional[Tuple[int]] = None,
+        shrink_pegasus_large: Optional[bool] = False,
         *from_pretrained_args,
         **from_pretrained_kwargs,
     ):
@@ -432,119 +388,7 @@ class SusForExtractiveSummarization(SusPreTrainedModel):
         self.model = SusModel(
             config=config,
             pretrained_pegasus_path=pretrained_pegasus_path,
-            distill_pegasus=distill_pegasus,
-            copied_encoder_layers=copied_encoder_layers,
-            copied_decoder_layers=copied_decoder_layers,
-            *from_pretrained_args,
-            **from_pretrained_kwargs,
-        )
-
-        self.config = config
-
-        stacked_encoder_type = self.config.stacked_encoder_type
-        if stacked_encoder_type == "classifier":
-            self.ext_module = SusLinearClassifier(config)
-        elif stacked_encoder_type == "transformer":
-            self.ext_module = SusTransformerClassifier(config)
-        else:
-            raise ValueError(f"Unsupported stacked layer type {stacked_encoder_type}.")
-    
-    def get_encoder(self):
-        return self.model.get_encoder()
-    
-    def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        head_mask=None,
-        inputs_embeds=None,
-        labels=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        pegasus_outputs = self.model.get_encoder()(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-
-        last_hidden_state = pegasus_outputs[0]
-        clss, cls_masks = self._prepare_inputs_for_stacked_layers(input_ids, labels)
-        cls_inputs_embeds = last_hidden_state[torch.arange(last_hidden_state.size(0)).unsqueeze(1), clss]
-
-        logits = self.ext_module(
-            inputs_embeds=cls_inputs_embeds,
-            attention_mask=cls_masks,
-        )
-        
-        loss = None
-        if labels is not None:
-            loss_fct = nn.BCELoss()
-            masked_labels = labels * cls_masks.float()
-            loss = loss_fct(logits, masked_labels.float())
-        
-        if not return_dict:
-            output = (logits,) + pegasus_outputs[1:]
-            return (loss,) + output if loss is not None else output
-        
-        return TokenClassifierOutput(
-            loss=loss,
-            logits=logits,
-            hidden_states=pegasus_outputs.hidden_states,
-            attentions=pegasus_outputs.attentions,
-        )
-    
-    def _prepare_inputs_for_stacked_layers(self, input_ids, labels):
-        
-        max_sentence_length = labels.size(1)
-
-        def _get_clss_and_cls_mask(input_ids):
-            clss_ids = torch.where(input_ids == self.config.cls_token_id)[0].long()
-            pad_size = max_sentence_length - len(clss_ids)
-            if pad_size >= 0:
-                clss_ids = torch.cat((clss_ids, torch.full((pad_size,), -1, dtype=torch.long, device=self.device, requires_grad=False)))
-            else:
-                clss_ids = clss_ids[:max_sentence_length]
-            cls_mask = torch.where(clss_ids == -1, 0, 1)
-            return clss_ids.unsqueeze(0), cls_mask.unsqueeze(0)
-        
-        ids, masks = zip(*map(_get_clss_and_cls_mask, input_ids))
-        
-        clss = torch.LongTensor().to(self.device)
-        torch.cat(ids, out=clss)
-        
-        cls_masks = torch.Tensor().to(self.device)
-        torch.cat(masks, out=cls_masks)
-        
-        return clss, cls_masks
-
-
-class SusForAbstractiveSummarization(SusPreTrainedModel):
-    def __init__(
-        self,
-        config: SusConfig,
-        pretrained_pegasus_path: Optional[str] = None,
-        distill_pegasus: Optional[bool] = False,
-        copied_encoder_layers: Optional[Tuple[int]] = None,
-        copied_decoder_layers: Optional[Tuple[int]] = None,
-        *from_pretrained_args,
-        **from_pretrained_kwargs,
-    ):
-        super().__init__(config)
-
-        self.model = SusModel(
-            config=config,
-            pretrained_pegasus_path=pretrained_pegasus_path,
-            distill_pegasus=distill_pegasus,
-            copied_encoder_layers=copied_encoder_layers,
-            copied_decoder_layers=copied_decoder_layers,
+            shrink_pegasus_large=shrink_pegasus_large,
             *from_pretrained_args,
             **from_pretrained_kwargs,
         )
