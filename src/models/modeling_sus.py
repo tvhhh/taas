@@ -1,4 +1,6 @@
-from typing import Optional, Tuple
+import os
+import json
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -43,16 +45,17 @@ class SusNeuralTopicModel(nn.Module):
 
         self.config = config
 
-        encoder_dims = config.vae_hidden_dims
-        decoder_dims = config.vae_hidden_dims[::-1]
+        vae_hidden_dims = (1024, 512, 256)
+        encoder_dims = vae_hidden_dims
+        decoder_dims = vae_hidden_dims[::-1]
         
         self.encoder = nn.ModuleList([
             nn.Linear(encoder_dims[i-1] if i > 0 else config.bow_size, encoder_dims[i])
             for i in range(len(encoder_dims))
         ])
         
-        self.fc_mu = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
-        self.fc_logvar = nn.Linear(config.vae_hidden_dims[-1], config.topic_dim)
+        self.fc_mu = nn.Linear(vae_hidden_dims[-1], config.topic_dim)
+        self.fc_logvar = nn.Linear(vae_hidden_dims[-1], config.topic_dim)
         self.fc_theta = nn.Linear(config.topic_dim, config.topic_dim)
         
         self.decoder = nn.ModuleList([nn.Linear(config.topic_dim, decoder_dims[0])] + [
@@ -60,7 +63,7 @@ class SusNeuralTopicModel(nn.Module):
             for i in range(len(decoder_dims))
         ])
 
-        self.dropout = nn.Dropout(p=config.vae_dropout)
+        self.dropout = nn.Dropout(p=config.ntm_dropout)
     
     def reparameterize(self, mu, log_var):
         std = torch.exp(log_var * 0.5)
@@ -81,7 +84,7 @@ class SusNeuralTopicModel(nn.Module):
         for i, layer in enumerate(self.decoder):
             hid = layer(hid)
             if i < len(self.decoder) - 1:
-                hid = F.relu(layer(hid))
+                hid = F.relu(self.dropout(hid))
         return hid
     
     def inference(self, x):
@@ -93,7 +96,7 @@ class SusNeuralTopicModel(nn.Module):
 
         return theta
 
-    def forward(self, x):
+    def forward(self, x, output_loss=True):
         mu, logvar = self.encode(x)
         z = self.reparameterize(mu, logvar)
         
@@ -102,14 +105,59 @@ class SusNeuralTopicModel(nn.Module):
         
         x_recons = self.decode(theta)
         
-        logsoftmax = torch.log_softmax(x_recons, dim=1)
-        rec_loss = -1.0 * torch.sum(x * logsoftmax)
+        loss = None
+        if output_loss:
+            logsoftmax = torch.log_softmax(x_recons, dim=1)
+            rec_loss = -1.0 * torch.sum(x * logsoftmax)
+            kl_div = -0.5 * torch.sum(1 + logvar - mu**2 - torch.exp(logvar))
+            loss = (rec_loss + kl_div) / x.size(0)
+        
+        outputs = tuple(t for t in (x_recons, theta, loss) if t is not None)
 
-        kl_div = -0.5 * torch.sum(1 + logvar - mu**2 - torch.exp(logvar))
+        return outputs
+    
+    def get_top_topic_words(self, topK=20):
+        z = torch.eye(self.config.topic_dim).to(self.device)
+        word_dist = torch.softmax(self.decode(z), dim=1)
+        _, word_ids = torch.topk(word_dist, topK, dim=1)
+        word_ids = word_ids.cpu().tolist()
+        return word_ids
+    
+    def save_pretrained(self, save_directory):
+        if not os.path.exists(save_directory):
+            os.mkdir(save_directory)
 
-        loss = (rec_loss + kl_div) / x.size(0)
+        # Save configuration
+        config_file = os.path.join(save_directory, "config.json")
+        config_dict = self.config.__dict__.copy()
+        saved_config_dict = {
+            attr: config_dict[attr] for attr in ("bow_size", "ntm_dropout", "topic_dim")
+        }
+        def _to_json_string(config_dict):
+            return json.dumps(config_dict, indent=2, sort_keys=True) + "\n"
+        with open(config_file, "w", encoding="utf-8") as writer:
+            writer.write(_to_json_string(saved_config_dict))
+        
+        # Save model state dict
+        state_dict_file = os.path.join(save_directory, "model_state_dict.pt")
+        state_dict = self.state_dict()
+        torch.save(state_dict, state_dict_file)
+    
+    @classmethod
+    def from_pretrained(cls, pretrained_model_path):
+        # Load configuration
+        config_file = os.path.join(pretrained_model_path, "config.json")
+        with open(config_file, "r") as reader:
+            config_dict = json.load(reader)
+        config = SusConfig(**config_dict)
 
-        return loss, x_recons, theta
+        # Load model state dict
+        ntm = cls(config)
+        state_dict_file = os.path.join(pretrained_model_path, "model_state_dict.pt")
+        state_dict = torch.load(state_dict_file)
+        ntm.load_state_dict(state_dict)
+
+        return ntm
 
 
 class SusPreTrainedModel(PreTrainedModel):

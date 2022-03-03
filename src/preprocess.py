@@ -63,7 +63,7 @@ if __name__ == "__main__":
     set_caching_enabled(False)
     dataset = load_dataset(args.dataset_path, args.dataset_name)
 
-    for s in ["train", "validation", "test"]:
+    for s in ("train", "validation", "test"):
         dataset[s] = preprocess(dataset[s], args.input_name, args.label_name)
     
     dataset.save_to_disk(args.output_dir)

@@ -36,9 +36,8 @@ class SusConfig(PretrainedConfig):
         decoder_start_token_id=0,
         classifier_dropout=0.0,
         scale_embedding=False,
-        bow_size=95998,
-        vae_hidden_dims=(1024,512,256),
-        vae_dropout=0.0,
+        bow_size=200000,
+        ntm_dropout=0.0,
         topic_dim=100,
         pad_token_id=0,
         eos_token_id=1,
@@ -66,8 +65,7 @@ class SusConfig(PretrainedConfig):
         self.num_hidden_layers = encoder_layers
         self.scale_embedding = scale_embedding
         self.bow_size = bow_size
-        self.vae_hidden_dims = vae_hidden_dims
-        self.vae_dropout = vae_dropout
+        self.ntm_dropout = ntm_dropout
         self.topic_dim = topic_dim
         super().__init__(
             pad_token_id=pad_token_id,
@@ -83,7 +81,6 @@ class SusConfig(PretrainedConfig):
 
         [config_dict.pop(attr, None) for attr in (
             "bow_size",
-            "vae_hidden_dim",
             "vae_dropout",
             "topic_dim",
         )]
