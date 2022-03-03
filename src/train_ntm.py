@@ -72,9 +72,15 @@ def _evaluate(args, model, eval_set, training_state):
     metrics = _evaluation_loop(args, model, eval_set)
     metrics["train_loss"] = train_loss / current_step
     
-    fmt_output = f"\nStep {current_step}:\n"
+    fmt_output = f"Step {current_step}:"
     for metric, result in metrics.items():
         fmt_output += f"    {metric}: {result:.6f}"
+    
+    if args.logging_dir is not None:
+        if not os.path.exists(args.logging_dir):
+            os.makedirs(args.logging_dir)
+        with open(os.path.join(args.logging_dir, "logs.txt"), "a+") as writer:
+            writer.write(fmt_output + "\n")
     
     print(fmt_output)
 
@@ -141,7 +147,8 @@ def _train(args, model, train_set, eval_set):
             
             # Save checkpoint
             if num_save_steps > 0 and current_step % num_save_steps == 0:
-                model.save_pretrained(os.path.join(args.output_dir, f"checkpoint-{current_step}"))
+                if args.output_dir is not None:
+                    model.save_pretrained(os.path.join(args.output_dir, f"checkpoint-{current_step}"))
             
             # Break the training loop when reaching num_train_steps
             if current_step == num_train_steps: break

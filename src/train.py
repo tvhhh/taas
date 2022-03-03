@@ -63,8 +63,8 @@ if __name__ == "__main__":
     parser.add_argument("-from_checkpoint", type=str2bool, nargs="?", default=False)
     parser.add_argument("-compute_metrics", type=str2bool, nargs="?", default=True)
 
-    parser.add_argument("-output_dir", type=str, default="./checkpoints")
-    parser.add_argument("-logging_dir", type=str, default="./logs")
+    parser.add_argument("-output_dir", type=str, default=None)
+    parser.add_argument("-logging_dir", type=str, default=None)
 
     args = parser.parse_args()
 

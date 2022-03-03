@@ -125,7 +125,7 @@ class SusNeuralTopicModel(nn.Module):
     
     def save_pretrained(self, save_directory):
         if not os.path.exists(save_directory):
-            os.mkdir(save_directory)
+            os.makedirs(save_directory)
 
         # Save configuration
         config_file = os.path.join(save_directory, "config.json")
