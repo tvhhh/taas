@@ -1,6 +1,4 @@
 import os
-import json
-
 import torch
 from torch.utils.data import DataLoader
 
@@ -34,9 +32,16 @@ def _compute_metrics(topic_words, eval_set):
     }
 
 
+eval_progress = None
 def _evaluation_loop(args, model, eval_set):
     eval_loader = DataLoader(eval_set, batch_size=args.batch_size)
-    eval_progress = tqdm(len(eval_loader))
+    
+    global eval_progress
+    if eval_progress is None:
+        eval_progress = tqdm(range(len(eval_loader)))
+    else:
+        eval_progress.refresh()
+        eval_progress.reset()
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -53,14 +58,12 @@ def _evaluation_loop(args, model, eval_set):
     if args.compute_metrics:
         topic_words = model.get_top_topic_words()
         topic_words = [
-            [eval_set.dictionary.id2token(word_id) for word_id in sample]
+            [eval_set.dictionary.id2token[word_id] for word_id in sample]
             for sample in topic_words
         ]
         ntm_metrics = _compute_metrics(topic_words, eval_set)
     
-    eval_progress.close()
-    
-    return { **ntm_metrics, "eval_loss": eval_loss }
+    return {**ntm_metrics, "eval_loss": eval_loss}
 
 
 def _evaluate(args, model, eval_set, training_state):
@@ -74,25 +77,6 @@ def _evaluate(args, model, eval_set, training_state):
         fmt_output += f"    {metric}: {result:.6f}"
     
     print(fmt_output)
-
-
-def _save(model, save_directory):
-    # Save configuration
-    config_file = os.path.join(save_directory, "config.json")
-    config_dict = {
-        "bow_size": model.config.bow_size,
-        "ntm_dropout": model.config.ntm_dropout,
-        "topic_dim": model.config.topic_dim,
-    }
-    def _to_json_string(config_dict):
-        return json.dumps(config_dict, indent=2, sort_keys=True) + "\n"
-    with open(config_file, "w", encoding="utf-8") as writer:
-        writer.write(_to_json_string(config_dict))
-    
-    # Save model state dict
-    state_dict_file = os.path.join(save_directory, "model_state_dict.pt")
-    state_dict = model.state_dict()
-    torch.save(state_dict, state_dict_file)
 
 
 def _train(args, model, train_set, eval_set):
@@ -147,9 +131,8 @@ def _train(args, model, train_set, eval_set):
             optimizer.step()
             optimizer.zero_grad()
 
-            # Update the progress bar
+            # Update the progress
             training_progress.update(1)
-
             current_step += 1
             
             # Compute evaluation metrics
@@ -157,8 +140,8 @@ def _train(args, model, train_set, eval_set):
                 _evaluate(args, model, eval_set, (train_loss, current_step))
             
             # Save checkpoint
-            if num_save_steps > 0 and current_step % num_train_steps == 0:
-                model.save_pretrained(os.path.join(args.output_dir, f"checkpoint_{current_step}"))
+            if num_save_steps > 0 and current_step % num_save_steps == 0:
+                model.save_pretrained(os.path.join(args.output_dir, f"checkpoint-{current_step}"))
             
             # Break the training loop when reaching num_train_steps
             if current_step == num_train_steps: break
@@ -178,7 +161,9 @@ def train_ntm(args):
         BowDataset(
             [doc.split() for doc in dataset[s]["corpus"]],
             args.ntm_dict_path,
-            args.ntm_vocab_size,
+            args.ntm_dict_filter_no_below,
+            args.ntm_dict_filter_no_above,
+            args.ntm_max_vocab_size,
         ) for s in ("train", "validation")
     )
 
@@ -189,7 +174,8 @@ def train_ntm(args):
     else:
         config = SusConfig(
             bow_size=train_set.vocab_size,
-            topic_dim=args.topic_dim,
+            ntm_dropout=args.ntm_dropout,
+            topic_dim=args.ntm_topic_dim,
         )
         ntm = SusNeuralTopicModel(config)
 

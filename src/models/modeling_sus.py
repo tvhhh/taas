@@ -73,7 +73,7 @@ class SusNeuralTopicModel(nn.Module):
     def encode(self, x):
         hid = x
         for layer in self.encoder:
-            hid = F.relu(self.dropout(layer(x)))
+            hid = F.relu(self.dropout(layer(hid)))
         
         mu, logvar = self.fc_mu(hid), self.fc_logvar(hid)
         
@@ -158,6 +158,10 @@ class SusNeuralTopicModel(nn.Module):
         ntm.load_state_dict(state_dict)
 
         return ntm
+    
+    @property
+    def device(self):
+        return next(self.parameters()).device
 
 
 class SusPreTrainedModel(PreTrainedModel):

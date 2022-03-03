@@ -1,5 +1,4 @@
 import argparse
-from ast import parse
 
 from train_abstractive import train_abs
 from train_ntm import train_ntm
@@ -33,12 +32,14 @@ if __name__ == "__main__":
     parser.add_argument("-shrink_pegasus_large", type=str2bool, default=False)
     
     parser.add_argument("-pretrained_ntm_path", type=str, default=None)
-    parser.add_argument("-ntm_dict_dir", type=str, default=None)
-    parser.add_argument("-ntm_vocab_size", type=int, default=200000)
+    parser.add_argument("-ntm_dict_path", type=str, default=None)
+    parser.add_argument("-ntm_dict_filter_no_below", type=int, default=5)
+    parser.add_argument("-ntm_dict_filter_no_above", type=float, default=0.5)
+    parser.add_argument("-ntm_max_vocab_size", type=int, default=200000)
     parser.add_argument("-ntm_topic_dim", type=int, default=100)
 
     parser.add_argument("-max_input_length", type=int, default=1024)
-    parser.add_argument("-max_label_length", type=int, default=128)
+    parser.add_argument("-max_target_length", type=int, default=128)
     
     parser.add_argument("-eval_strategy", type=str, choices=["no", "epoch", "steps"], default="epoch")
     parser.add_argument("-eval_steps", type=int, default=5)

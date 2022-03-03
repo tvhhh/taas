@@ -79,11 +79,12 @@ class SusConfig(PretrainedConfig):
     def to_pegasus_config(self) -> PegasusConfig:
         config_dict = self.__dict__.copy()
 
-        [config_dict.pop(attr, None) for attr in (
+        for attr in (
             "bow_size",
-            "vae_dropout",
+            "ntm_dropout",
             "topic_dim",
-        )]
+        ):
+            config_dict.pop(attr, None)
         
         pegasus_config = PegasusConfig(**config_dict)
 

@@ -11,18 +11,26 @@ class BowDataset(Dataset):
         self,
         documents,
         dict_path=None,
-        vocab_size=200000,
+        dict_filter_no_below=5,
+        dict_filter_no_above=0.5,
+        max_vocab_size=200000,
     ):
         self.documents = documents
         
         dict_path = dict_path or os.path.join(os.getcwd(), "data/corpus/dict.txt")
         if not os.path.exists(dict_path):
             self.dictionary = Dictionary(documents)
-            self.dictionary.filter_extremes(keep_n=vocab_size)
+            self.dictionary.filter_extremes(
+                no_below=dict_filter_no_below,
+                no_above=dict_filter_no_above,
+                keep_n=max_vocab_size,
+            )
+            self.dictionary.compactify()
             self.dictionary.id2token = {v: k for k, v in self.dictionary.token2id.items()}
             self.dictionary.save_as_text(dict_path)
         else:
             self.dictionary = Dictionary.load_from_text(dict_path)
+            self.dictionary.id2token = {v: k for k, v in self.dictionary.token2id.items()}
         
         self.vocab_size = len(self.dictionary)
     
