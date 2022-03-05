@@ -1,13 +1,14 @@
 import numpy as np
 import nltk
+nltk.download("punkt")
 
 from datasets import load_dataset, load_from_disk, load_metric
 
 from transformers.data.data_collator import DataCollatorForSeq2Seq
 from transformers.models.pegasus.tokenization_pegasus import PegasusTokenizer
-from transformers.trainer import Trainer
 from transformers.training_args import TrainingArguments
 
+from trainer import CustomTrainer
 from models.configuration_sus import SusConfig
 from models.modeling_sus import SusForConditionalGeneration
 
@@ -42,8 +43,9 @@ def _prepare_data(
 
 rouge = load_metric("rouge")
 def _compute_metrics(p, tokenizer):
-    (logits, _), labels = p
-    predictions = np.argmax(logits, axis=-1)
+    (predictions, _), labels = p
+    
+    predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
     decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
     
     labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
@@ -76,8 +78,8 @@ def train_abs(args):
         sus = SusForConditionalGeneration.from_pretrained(args.pretrained_model_path)
     else:
         config = SusConfig(
-            cls_token_id=tokenizer.cls_token_id,
-            sep_token_id=tokenizer.sep_token_id,
+            encoder_layers=args.sus_encoder_layers,
+            decoder_layers=args.sus_decoder_layers,
         )
         
         sus = SusForConditionalGeneration(
@@ -132,7 +134,7 @@ def train_abs(args):
         metric_for_best_model=args.metric_load_best,
         greater_is_better=args.greater_better,
     )
-    trainer = Trainer(
+    trainer = CustomTrainer(
         model=sus,
         args=training_args,
         data_collator=data_collator,
@@ -141,4 +143,8 @@ def train_abs(args):
         tokenizer=tokenizer,
         compute_metrics=compute_metrics,
     )
+
+    if args.evaluate_first_step:
+        trainer.evaluate()
+    
     trainer.train(resume_from_checkpoint=args.from_checkpoint)
