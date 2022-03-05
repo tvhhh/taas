@@ -185,120 +185,6 @@ class SusPreTrainedModel(PreTrainedModel):
             module.gradient_checkpointing = value
 
 
-class SusEncoder(SusPreTrainedModel):
-    def __init__(
-        self,
-        config: SusConfig,
-        embed_tokens: Optional[nn.Embedding] = None,
-        from_pretrained_pegasus: Optional[PegasusEncoder] = None,
-        shrink_pegasus_large: Optional[bool] = False,
-    ):
-        super().__init__(config)
-
-        if from_pretrained_pegasus is not None:
-            self.pegasus_encoder = from_pretrained_pegasus
-            if shrink_pegasus_large:
-                layer_ids = _prepare_layer_ids_for_distillation(
-                    from_pretrained_pegasus.config.encoder_layers,
-                    config.encoder_layers,
-                )
-                self.pegasus_encoder.layers = nn.ModuleList([
-                    from_pretrained_pegasus.layers[i] for i in layer_ids
-                ])
-
-        else:
-            pegasus_config = self.config.to_pegasus_config()
-            self.pegasus_encoder = PegasusEncoder(pegasus_config, embed_tokens)
-    
-    def get_input_embeddings(self):
-        return self.pegasus_encoder.embed_tokens
-    
-    def set_input_embeddings(self, value):
-        self.pegasus_encoder.embed_tokens = value
-    
-    def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        head_mask=None,
-        inputs_embeds=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        return self.pegasus_encoder(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-
-
-class SusDecoder(SusPreTrainedModel):
-    def __init__(
-        self,
-        config: SusConfig,
-        embed_tokens: Optional[nn.Embedding] = None,
-        from_pretrained_pegasus: Optional[PegasusDecoder] = None,
-        shrink_pegasus_large: Optional[bool] = False,
-    ):
-        super().__init__(config)
-
-        if from_pretrained_pegasus is not None:
-            self.pegasus_decoder = from_pretrained_pegasus
-            if shrink_pegasus_large:
-                layer_ids = _prepare_layer_ids_for_distillation(
-                    from_pretrained_pegasus.config.encoder_layers,
-                    config.decoder_layers,
-                )
-                self.pegasus_decoder.layers = nn.ModuleList([
-                    from_pretrained_pegasus.layers[i] for i in layer_ids
-                ])
-
-        else:
-            pegasus_config = self.config.to_pegasus_config()
-            self.pegasus_decoder = PegasusDecoder(pegasus_config, embed_tokens)
-    
-    def get_input_embeddings(self):
-        return self.pegasus_decoder.embed_tokens
-    
-    def set_input_embeddings(self, value):
-        self.pegasus_decoder.embed_tokens = value
-    
-    def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        head_mask=None,
-        cross_attn_head_mask=None,
-        past_key_values=None,
-        inputs_embeds=None,
-        use_cache=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        return self.pegasus_decoder(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            encoder_hidden_states=encoder_hidden_states,
-            encoder_attention_mask=encoder_attention_mask,
-            head_mask=head_mask,
-            cross_attn_head_mask=cross_attn_head_mask,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-
-
 class SusModel(SusPreTrainedModel):
     def __init__(
         self,
@@ -320,23 +206,33 @@ class SusModel(SusPreTrainedModel):
             
             self.shared_embed = pegasus.get_input_embeddings()
             
-            self.encoder = SusEncoder(
-                config=config,
-                from_pretrained_pegasus=pegasus.get_encoder(),
-                shrink_pegasus_large=shrink_pegasus_large,
-            )
+            self.encoder = pegasus.get_encoder()
+            self.decoder = pegasus.get_decoder()
+            if shrink_pegasus_large:
+                encoder_layer_ids = _prepare_layer_ids_for_distillation(
+                    pegasus.config.encoder_layers,
+                    config.encoder_layers
+                )
+                self.encoder.layers = nn.ModuleList([
+                    pegasus.get_encoder().layers[i] for i in encoder_layer_ids
+                ])
+
+                decoder_layer_ids = _prepare_layer_ids_for_distillation(
+                    pegasus.config.decoder_layers,
+                    config.decoder_layers
+                )
+                self.decoder.layers = nn.ModuleList([
+                    pegasus.get_decoder().layers[i] for i in decoder_layer_ids
+                ])
             
-            self.decoder = SusDecoder(
-                config=config,
-                from_pretrained_pegasus=pegasus.get_decoder(),
-                shrink_pegasus_large=shrink_pegasus_large,
-            )
-        
         else:
             padding_idx, vocab_size = config.pad_token_id, config.vocab_size
+            
             self.shared_embed = nn.Embedding(vocab_size, config.d_model, padding_idx)
-            self.encoder = SusEncoder(config, embed_tokens=self.shared_embed)
-            self.decoder = SusDecoder(config, embed_tokens=self.shared_embed)
+            
+            pegasus_config = config.to_pegasus_config()
+            self.encoder = PegasusEncoder(pegasus_config, embed_tokens=self.shared_embed)
+            self.decoder = PegasusDecoder(pegasus_config, embed_tokens=self.shared_embed)
     
     def get_encoder(self):
         return self.encoder
@@ -349,8 +245,8 @@ class SusModel(SusPreTrainedModel):
     
     def set_input_embeddings(self, value):
         self.shared_embed = value
-        self.encoder.set_input_embeddings(value)
-        self.decoder.set_input_embeddings(value)
+        self.encoder.embed_tokens = self.shared_embed
+        self.decoder.embed_tokens = self.shared_embed
     
     def forward(
         self,
@@ -445,7 +341,6 @@ class SusForConditionalGeneration(SusPreTrainedModel):
             **from_pretrained_kwargs,
         )
 
-        self.config = config
         self.lm_head = nn.Linear(config.d_model, config.vocab_size)
     
     def get_encoder(self):
