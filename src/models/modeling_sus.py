@@ -13,15 +13,6 @@ from transformers.models.pegasus.modeling_pegasus import PegasusEncoder, Pegasus
 from .configuration_sus import SusConfig
 
 
-def _prepare_layer_ids_for_distillation(teacher_layers, student_layers):
-    if student_layers > teacher_layers:
-        raise ValueError("Student model must be smaller than teacher model.")
-    step = int(round((teacher_layers-1) / (student_layers-1)))
-    layers = list(range(0, step * student_layers, step))
-    layers[-1] = teacher_layers - 1
-    return tuple(layers)
-
-
 def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
     """
     Shift input ids one token to the right.
@@ -186,44 +177,18 @@ class SusPreTrainedModel(PreTrainedModel):
 
 
 class SusModel(SusPreTrainedModel):
-    def __init__(
-        self,
-        config: SusConfig,
-        pretrained_pegasus_path: Optional[str] = None,
-        shrink_pegasus_large: Optional[bool] = False,
-        *from_pretrained_args,
-        **from_pretrained_kwargs,
-    ):
+    def __init__(self, config: SusConfig, pretrained_pegasus_path: Optional[str] = None):
         super().__init__(config)
 
         if pretrained_pegasus_path is not None:
-            pegasus = PegasusModel.from_pretrained(
-                pretrained_pegasus_path,
-                *from_pretrained_args,
-                **from_pretrained_kwargs
-            )
-            config.copy_pegasus_config(pegasus.config, shrink_pegasus_large)
+            pegasus = PegasusModel.from_pretrained(pretrained_pegasus_path)
+            
+            config.copy_pegasus_config(pegasus.config)
             
             self.shared_embed = pegasus.get_input_embeddings()
             
             self.encoder = pegasus.get_encoder()
             self.decoder = pegasus.get_decoder()
-            if shrink_pegasus_large:
-                encoder_layer_ids = _prepare_layer_ids_for_distillation(
-                    pegasus.config.encoder_layers,
-                    config.encoder_layers
-                )
-                self.encoder.layers = nn.ModuleList([
-                    pegasus.get_encoder().layers[i] for i in encoder_layer_ids
-                ])
-
-                decoder_layer_ids = _prepare_layer_ids_for_distillation(
-                    pegasus.config.decoder_layers,
-                    config.decoder_layers
-                )
-                self.decoder.layers = nn.ModuleList([
-                    pegasus.get_decoder().layers[i] for i in decoder_layer_ids
-                ])
             
         else:
             padding_idx, vocab_size = config.pad_token_id, config.vocab_size
@@ -323,22 +288,12 @@ class SusModel(SusPreTrainedModel):
 
 
 class SusForConditionalGeneration(SusPreTrainedModel):
-    def __init__(
-        self,
-        config: SusConfig,
-        pretrained_pegasus_path: Optional[str] = None,
-        shrink_pegasus_large: Optional[bool] = False,
-        *from_pretrained_args,
-        **from_pretrained_kwargs,
-    ):
+    def __init__(self, config: SusConfig, pretrained_pegasus_path: Optional[str] = None):
         super().__init__(config)
 
         self.model = SusModel(
             config=config,
             pretrained_pegasus_path=pretrained_pegasus_path,
-            shrink_pegasus_large=shrink_pegasus_large,
-            *from_pretrained_args,
-            **from_pretrained_kwargs,
         )
 
         self.lm_head = nn.Linear(config.d_model, config.vocab_size)

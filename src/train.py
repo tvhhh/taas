@@ -29,9 +29,7 @@ if __name__ == "__main__":
     
     parser.add_argument("-pretrained_model_path", type=str, default=None)
     parser.add_argument("-pretrained_pegasus_large_path", type=str, default=None)
-    parser.add_argument("-shrink_pegasus_large", type=str2bool, default=False)
-    parser.add_argument("-sus_encoder_layers", type=int, default=16)
-    parser.add_argument("-sus_decoder_layers", type=int, default=4)
+    parser.add_argument("-freeze_encoder_layers", type=int, default=None)
     
     parser.add_argument("-pretrained_ntm_path", type=str, default=None)
     parser.add_argument("-ntm_dict_path", type=str, default=None)

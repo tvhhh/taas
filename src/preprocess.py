@@ -5,6 +5,7 @@ from datasets import load_dataset, set_caching_enabled
 
 import nltk
 nltk.download("averaged_perceptron_tagger")
+nltk.download('omw-1.4')
 nltk.download("punkt")
 nltk.download("stopwords")
 nltk.download("wordnet")
@@ -16,8 +17,8 @@ from collections import defaultdict
 
 
 def _preprocess_corpus(src):
-    # Remove special characters
-    src = re.sub(r"[^a-zA-Z0-9 ]", "", src)
+    # Remove punctuations and numbers
+    src = re.sub(r"[^a-zA-Z ]", "", src)
     
     # Remove stop words
     stop_words = set(stopwords.words("english"))
@@ -64,6 +65,6 @@ if __name__ == "__main__":
     dataset = load_dataset(args.dataset_path, args.dataset_name)
 
     for s in ("train", "validation", "test"):
-        dataset[s] = preprocess(dataset[s], args.input_name, args.label_name)
+        dataset[s] = preprocess(dataset[s], args.input_name)
     
     dataset.save_to_disk(args.output_dir)

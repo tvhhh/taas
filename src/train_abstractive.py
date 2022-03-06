@@ -77,16 +77,16 @@ def train_abs(args):
     if args.pretrained_model_path is not None:
         sus = SusForConditionalGeneration.from_pretrained(args.pretrained_model_path)
     else:
-        config = SusConfig(
-            encoder_layers=args.sus_encoder_layers,
-            decoder_layers=args.sus_decoder_layers,
-        )
-        
-        sus = SusForConditionalGeneration(
-            config,
-            pretrained_pegasus_path=args.pretrained_pegasus_large_path,
-            shrink_pegasus_large=args.shrink_pegasus_large,
-        )
+        config = SusConfig()
+        sus = SusForConditionalGeneration(config, args.pretrained_pegasus_large_path)
+    
+    # Freeze encoder layers
+    if args.freeze_encoder_layers is not None:
+        for param in sus.get_encoder().embed_tokens.parameters():
+            param.requires_grad = False
+        for i in range(args.freeze_encoder_layers):
+            for param in sus.get_encoder().layers[i].parameters():
+                param.requires_grad = False
     
     # Use data collator for padding
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer,model=sus)
