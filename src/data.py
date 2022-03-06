@@ -19,6 +19,8 @@ class BowDataset(Dataset):
         
         dict_path = dict_path or os.path.join(os.getcwd(), "data/corpus/dict.txt")
         if not os.path.exists(dict_path):
+            if not os.path.exists(os.path.dirname(dict_path)):
+                os.makedirs(os.path.dirname(dict_path))
             self.dictionary = Dictionary(documents)
             self.dictionary.filter_extremes(
                 no_below=dict_filter_no_below,

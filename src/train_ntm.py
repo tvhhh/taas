@@ -1,4 +1,7 @@
 import os
+import nltk
+nltk.download("punkt")
+
 import torch
 from torch.utils.data import DataLoader
 
@@ -14,21 +17,19 @@ from tqdm.auto import tqdm
 
 
 def _compute_metrics(topic_words, eval_set):
-    c_v_coherence_model, c_uci_coherence_model, c_npmi_coherence_model = (
+    c_v_coherence_model, c_uci_coherence_model = (
         CoherenceModel(
             topics=topic_words,
             texts=eval_set.documents,
             dictionary=eval_set.dictionary,
             coherence=coherence_metric,
-        ) for coherence_metric in ("c_v", "c_uci", "c_npmi")
+        ) for coherence_metric in ("c_v", "c_uci")
     )
     c_v_score = c_v_coherence_model.get_coherence()
     c_uci_score = c_uci_coherence_model.get_coherence()
-    c_npmi_score = c_npmi_coherence_model.get_coherence()
     return {
         "c_v": c_v_score,
         "c_uci": c_uci_score,
-        "c_npmi": c_npmi_score,
     }
 
 
