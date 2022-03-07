@@ -8,7 +8,7 @@ from transformers.data.data_collator import DataCollatorForSeq2Seq
 from transformers.models.pegasus.tokenization_pegasus import PegasusTokenizer
 from transformers.training_args import TrainingArguments
 
-from trainer import CustomTrainer
+from trainer import CustomHFTrainer
 from models.configuration_sus import SusConfig
 from models.modeling_sus import SusForConditionalGeneration
 
@@ -20,7 +20,7 @@ def _prepare_data(
     label_name,
     max_input_length=1024,
     max_target_length=128,
-):    
+):
     def _process_data(examples):
         model_inputs = tokenizer(
             examples[input_name],
@@ -113,8 +113,9 @@ def train_abs(args):
         output_dir=args.output_dir,
         overwrite_output_dir=(not args.from_checkpoint),
         evaluation_strategy=args.eval_strategy,
-        per_device_train_batch_size=args.batch_size,
-        per_device_eval_batch_size=args.batch_size,
+        per_device_train_batch_size=args.train_batch_size,
+        per_device_eval_batch_size=args.eval_batch_size,
+        gradient_accumulation_steps=args.gradient_accumulation_steps,
         eval_accumulation_steps=args.eval_accumulation_steps,
         learning_rate=args.lr,
         weight_decay=args.weight_decay,
@@ -134,7 +135,7 @@ def train_abs(args):
         metric_for_best_model=args.metric_load_best,
         greater_is_better=args.greater_better,
     )
-    trainer = CustomTrainer(
+    trainer = CustomHFTrainer(
         model=sus,
         args=training_args,
         data_collator=data_collator,

@@ -13,14 +13,13 @@ class BowDataset(Dataset):
         dict_path=None,
         dict_filter_no_below=5,
         dict_filter_no_above=0.5,
-        max_vocab_size=200000,
+        max_vocab_size=100000,
     ):
         self.documents = documents
         
         dict_path = dict_path or os.path.join(os.getcwd(), "data/corpus/dict.txt")
         if not os.path.exists(dict_path):
-            if not os.path.exists(os.path.dirname(dict_path)):
-                os.makedirs(os.path.dirname(dict_path))
+            os.makedirs(os.path.dirname(dict_path), exist_ok=True)
             self.dictionary = Dictionary(documents)
             self.dictionary.filter_extremes(
                 no_below=dict_filter_no_below,

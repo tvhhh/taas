@@ -21,7 +21,7 @@ from transformers.trainer_utils import (
 )
 
 
-class CustomTrainer(Trainer):
+class CustomHFTrainer(Trainer):
     def evaluation_loop(
         self,
         dataloader: DataLoader,

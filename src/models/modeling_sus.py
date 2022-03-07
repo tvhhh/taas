@@ -107,7 +107,7 @@ class SusNeuralTopicModel(nn.Module):
 
         return outputs
     
-    def get_top_topic_words(self, topK=20):
+    def get_top_topic_words(self, topK=10):
         z = torch.eye(self.config.topic_dim).to(self.device)
         word_dist = torch.softmax(self.decode(z), dim=1)
         _, word_ids = torch.topk(word_dist, topK, dim=1)
@@ -115,8 +115,7 @@ class SusNeuralTopicModel(nn.Module):
         return word_ids
     
     def save_pretrained(self, save_directory):
-        if not os.path.exists(save_directory):
-            os.makedirs(save_directory)
+        os.makedirs(save_directory, exist_ok=True)
 
         # Save configuration
         config_file = os.path.join(save_directory, "config.json")
@@ -130,7 +129,7 @@ class SusNeuralTopicModel(nn.Module):
             writer.write(_to_json_string(saved_config_dict))
         
         # Save model state dict
-        state_dict_file = os.path.join(save_directory, "model_state_dict.pt")
+        state_dict_file = os.path.join(save_directory, "model_state.pt")
         state_dict = self.state_dict()
         torch.save(state_dict, state_dict_file)
     
@@ -144,7 +143,7 @@ class SusNeuralTopicModel(nn.Module):
 
         # Load model state dict
         ntm = cls(config)
-        state_dict_file = os.path.join(pretrained_model_path, "model_state_dict.pt")
+        state_dict_file = os.path.join(pretrained_model_path, "model_state.pt")
         state_dict = torch.load(state_dict_file)
         ntm.load_state_dict(state_dict)
 

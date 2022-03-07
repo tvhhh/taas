@@ -1,6 +1,6 @@
+import json
 import os
-import nltk
-nltk.download("punkt")
+import re
 
 import torch
 from torch.utils.data import DataLoader
@@ -17,25 +17,27 @@ from tqdm.auto import tqdm
 
 
 def _compute_metrics(topic_words, eval_set):
-    c_v_coherence_model, c_uci_coherence_model = (
+    c_v_coherence_model, c_uci_coherence_model, u_mass_coherence_model = (
         CoherenceModel(
             topics=topic_words,
             texts=eval_set.documents,
             dictionary=eval_set.dictionary,
             coherence=coherence_metric,
-        ) for coherence_metric in ("c_v", "c_uci")
+        ) for coherence_metric in ("c_v", "c_uci", "u_mass")
     )
     c_v_score = c_v_coherence_model.get_coherence()
     c_uci_score = c_uci_coherence_model.get_coherence()
+    u_mass_score = u_mass_coherence_model.get_coherence()
     return {
         "c_v": c_v_score,
         "c_uci": c_uci_score,
+        "u_mass": u_mass_score,
     }
 
 
 eval_progress = None
 def _evaluation_loop(args, model, eval_set):
-    eval_loader = DataLoader(eval_set, batch_size=args.batch_size)
+    eval_loader = DataLoader(eval_set, batch_size=args.eval_batch_size)
     
     global eval_progress
     if eval_progress is None:
@@ -73,13 +75,12 @@ def _evaluate(args, model, eval_set, training_state):
     metrics = _evaluation_loop(args, model, eval_set)
     metrics["train_loss"] = train_loss / current_step
     
-    fmt_output = f"Step {current_step}:"
+    fmt_output = f"Step {current_step:<10d}:"
     for metric, result in metrics.items():
-        fmt_output += f"    {metric}: {result:.6f}"
+        fmt_output += f"\t{metric}: {result:.6f}"
     
     if args.logging_dir is not None:
-        if not os.path.exists(args.logging_dir):
-            os.makedirs(args.logging_dir)
+        os.makedirs(args.logging_dir, exist_ok=True)
         with open(os.path.join(args.logging_dir, "logs.txt"), "a+") as writer:
             writer.write(fmt_output + "\n")
     
@@ -87,51 +88,91 @@ def _evaluate(args, model, eval_set, training_state):
 
 
 def _train(args, model, train_set, eval_set):
-    train_loader = DataLoader(train_set, shuffle=True, batch_size=args.batch_size)
-    
-    num_train_steps = 0
-    if args.train_steps == -1:
-        num_train_steps = args.train_epochs * len(train_loader)
+    train_loader = DataLoader(train_set, shuffle=True, batch_size=args.train_batch_size)
+
+    training_state = {
+        "train_progress": 0,
+        "total_train_steps": 0,
+        "eval_steps": 0,
+        "save_steps": 0,
+        "train_loss": 0,
+    }
+
+    skipped_train_steps = 0
+    if args.from_checkpoint:
+        # Get last checkpoint
+        re_checkpoint = re.compile(r"^checkpoint\-(\d+)$")
+        dirs = os.listdir(args.output_dir)
+        checkpoints = [
+            path for path in dirs
+            if re_checkpoint.search(path) is not None
+            and os.path.isdir(os.path.join(args.output_dir, path))
+        ]
+        last_checkpoint = os.path.join(
+            args.output_dir,
+            max(checkpoints, key=lambda x: int(re_checkpoint.search(x).groups()[0]))
+        )
+
+        # Load saved model
+        model = SusNeuralTopicModel.from_pretrained(last_checkpoint)
+
+        # Load optimizer state dict
+        optimizer_state_file = os.path.join(last_checkpoint, "optimizer_state.pt")
+        optimizer_state_dict = torch.load(optimizer_state_file)
+        optimizer = torch.optim.Adam(model.parameters())
+        optimizer.load_state_dict(optimizer_state_dict)
+
+        # Load training state
+        training_state_file = os.path.join(last_checkpoint, "training_state.json")
+        with open(training_state_file, "r") as reader:
+            training_state = json.load(reader)
+            skipped_train_steps = training_state["train_progress"]
+
     else:
-        num_train_steps = args.train_steps
+        if args.train_steps == -1:
+            training_state["total_train_steps"] = args.train_epochs * len(train_loader)
+        else:
+            training_state["total_train_steps"] = args.train_steps
 
-    num_eval_steps = 0
-    if args.eval_strategy == "epoch":
-        num_eval_steps = len(train_loader)
-    elif args.eval_strategy == "steps":
-        num_eval_steps = args.eval_steps
+        if args.eval_strategy == "epoch":
+            training_state["eval_steps"] = len(train_loader)
+        elif args.eval_strategy == "steps":
+            training_state["eval_steps"] = args.eval_steps
 
-    num_save_steps = 0
-    if args.save_checkpoint_strategy == "epoch":
-        num_save_steps = len(train_loader)
-    elif args.save_checkpoint_strategy == "steps":
-        num_save_steps = args.save_checkpoint_steps
+        if args.save_checkpoint_strategy == "epoch":
+            training_state["save_steps"] = len(train_loader)
+        elif args.save_checkpoint_strategy == "steps":
+            training_state["save_steps"] = args.save_checkpoint_steps
+        
+        # Use Adam optimizer
+        optimizer = torch.optim.Adam(
+            model.parameters(),
+            lr=args.lr,
+            betas=(args.beta1,args.beta2),
+            eps=args.epsilon,
+            weight_decay=args.weight_decay,
+        )
 
     # Load model to device
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
-    # Use Adam optimizer
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=args.lr,
-        betas=(args.beta1,args.beta2),
-        eps=args.epsilon,
-        weight_decay=args.weight_decay,
-    )
-
     # Use tqdm progress bars
-    training_progress = tqdm(range(num_train_steps))
+    training_progress = tqdm(range(training_state["total_train_steps"]))
     
     current_step = 0
-    train_loss = 0
     model.train()
-    while current_step < num_train_steps:
+    while current_step < training_state["total_train_steps"]:
         for batch in train_loader:
+            # Skip training steps if resuming from checkpoint
+            if current_step < skipped_train_steps:
+                current_step += 1
+                continue
+
             # Forward the model and compute loss backward
             x_bow = batch.to(device)
             _, _, loss = model(x_bow, output_loss=True)
-            train_loss += loss.item()
+            training_state["train_loss"] += loss.item()
             loss.backward()
 
             # Update the model parameters via optimizer
@@ -143,16 +184,29 @@ def _train(args, model, train_set, eval_set):
             current_step += 1
             
             # Compute evaluation metrics
-            if num_eval_steps > 0 and current_step % num_eval_steps == 0:
-                _evaluate(args, model, eval_set, (train_loss, current_step))
+            if training_state["eval_steps"] > 0 and current_step % training_state["eval_steps"] == 0:
+                _evaluate(args, model, eval_set, training_state)
             
             # Save checkpoint
-            if num_save_steps > 0 and current_step % num_save_steps == 0:
+            if training_state["save_steps"] > 0 and current_step % training_state["save_steps"] == 0:
                 if args.output_dir is not None:
-                    model.save_pretrained(os.path.join(args.output_dir, f"checkpoint-{current_step}"))
+                    checkpoint_dir = os.path.join(args.output_dir, f"checkpoint-{current_step}")
+                    os.makedirs(checkpoint_dir, exist_ok=True)
+
+                    model.save_pretrained(checkpoint_dir)
+
+                    optimizer_state_file = os.path.join(checkpoint_dir, "optimizer_state.pt")
+                    torch.save(optimizer.state_dict(), optimizer_state_file)
+                    
+                    training_state_file = os.path.join(checkpoint_dir, "training_state.json")
+                    def _to_json_string(state):
+                        return json.dumps(state, indent=2, sort_keys=True) + "\n"
+                    with open(training_state_file, "w", encoding="utf-8") as writer:
+                        training_state["train_progress"] = current_step
+                        writer.write(_to_json_string(training_state))
             
             # Break the training loop when reaching num_train_steps
-            if current_step == num_train_steps: break
+            if current_step == training_state["total_train_steps"]: break
 
 
 def train_ntm(args):
