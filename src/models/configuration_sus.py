@@ -4,14 +4,11 @@ from transformers.models.pegasus.configuration_pegasus import PegasusConfig
 
 class SusConfig(PretrainedConfig):
     keys_to_ignore_at_inference = ["past_key_values"]
+    keys_to_ignore_pegasus = ["bow_size", "ntm_dropout", "topic_dim"]
     attribute_map = {
         "num_attention_heads": "encoder_attention_heads",
         "hidden_size": "d_model",
     }
-    const_attrs = [
-        "vocab_size",
-        "max_position_embeddings",
-    ]
     
     def __init__(
         self,
@@ -36,7 +33,7 @@ class SusConfig(PretrainedConfig):
         decoder_start_token_id=0,
         classifier_dropout=0.0,
         scale_embedding=False,
-        bow_size=200000,
+        bow_size=100000,
         ntm_dropout=0.0,
         topic_dim=100,
         pad_token_id=0,
@@ -79,24 +76,13 @@ class SusConfig(PretrainedConfig):
     def to_pegasus_config(self) -> PegasusConfig:
         config_dict = self.__dict__.copy()
 
-        for attr in (
-            "bow_size",
-            "ntm_dropout",
-            "topic_dim",
-        ):
+        for attr in self.keys_to_ignore_pegasus:
             config_dict.pop(attr, None)
         
         pegasus_config = PegasusConfig(**config_dict)
 
         return pegasus_config
     
-    def copy_pegasus_config(self, config: PegasusConfig, shrink_pegasus_large=False):
+    def copy_pegasus_config(self, config: PegasusConfig):
         pegasus_config_dict = config.__dict__.copy()
-
-        const_attrs = self.const_attrs if not shrink_pegasus_large else (
-            self.const_attrs + ["encoder_layers", "decoder_layers"]
-        )
-        for attr in const_attrs:
-            pegasus_config_dict[attr] = self.__dict__[attr]
-        
         self.__dict__ = {**self.__dict__, **pegasus_config_dict}
