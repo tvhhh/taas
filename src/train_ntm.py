@@ -70,7 +70,7 @@ def _evaluation_loop(args, model, eval_set):
 
 
 def _evaluate(args, model, eval_set, training_state):
-    train_loss, current_step = training_state
+    train_loss, current_step = training_state["train_loss"], training_state["train_progress"]
 
     metrics = _evaluation_loop(args, model, eval_set)
     metrics["train_loss"] = train_loss / current_step
@@ -182,6 +182,7 @@ def _train(args, model, train_set, eval_set):
             # Update the progress
             training_progress.update(1)
             current_step += 1
+            training_state["train_progress"] = current_step
             
             # Compute evaluation metrics
             if training_state["eval_steps"] > 0 and current_step % training_state["eval_steps"] == 0:
@@ -202,7 +203,6 @@ def _train(args, model, train_set, eval_set):
                     def _to_json_string(state):
                         return json.dumps(state, indent=2, sort_keys=True) + "\n"
                     with open(training_state_file, "w", encoding="utf-8") as writer:
-                        training_state["train_progress"] = current_step
                         writer.write(_to_json_string(training_state))
             
             # Break the training loop when reaching num_train_steps

@@ -19,20 +19,8 @@ from tqdm.auto import tqdm
 
 stop_words = None
 def _preprocess_corpus(args, src, progress=None):
-    # Remove stop words
-    global stop_words
-    if stop_words is None:
-        if args.stop_words_path is not None:
-            with open(args.stop_words_path, "r") as reader:
-                raw_text = reader.read()
-                stop_words = set(word.strip() for word in raw_text.split("\n"))
-        else:
-            stop_words = set(stopwords.words("english"))
+    
     words = word_tokenize(src)
-    words = [w.lower() for w in words if w.lower() not in stop_words]
-
-    # Remove punctuations and numbers
-    words = re.sub(r"[^a-zA-Z ]", "", " ".join(words)).split()
 
     # Lemmatize
     tag_map = defaultdict(lambda : wordnet.NOUN)
@@ -42,10 +30,24 @@ def _preprocess_corpus(args, src, progress=None):
     lmtz = WordNetLemmatizer()
     words = [lmtz.lemmatize(word, tag_map[tag[0]]) for word, tag in pos_tag(words)]
 
+    # Remove stop words
+    global stop_words
+    if stop_words is None:
+        if args.stop_words_path is not None:
+            with open(args.stop_words_path, "r") as reader:
+                raw_text = reader.read()
+                stop_words = set(word.strip() for word in raw_text.split("\n"))
+        else:
+            stop_words = set(stopwords.words("english"))
+    words = [w.lower() for w in words if w.lower() not in stop_words]
+
+    # Remove punctuations and numbers
+    words = re.sub(r"[^a-zA-Z ]", "", " ".join(words)).split()
+
     if progress is not None:
         progress.update(1)
 
-    return words
+    return " ".join(words)
 
 
 def preprocess(args, dataset):
