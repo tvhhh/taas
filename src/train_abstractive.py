@@ -1,16 +1,13 @@
-import numpy as np
 import nltk
-nltk.download("punkt")
+import numpy as np
 
 from datasets import load_dataset, load_from_disk, load_metric
-
+from models.configuration_sus import SusConfig
+from models.modeling_sus import SusForConditionalGeneration
+from trainer.hf_trainer import CustomHFTrainer
 from transformers.data.data_collator import DataCollatorForSeq2Seq
 from transformers.models.pegasus.tokenization_pegasus import PegasusTokenizer
 from transformers.training_args import TrainingArguments
-
-from trainer import CustomHFTrainer
-from models.configuration_sus import SusConfig
-from models.modeling_sus import SusForConditionalGeneration
 
 
 def _prepare_data(

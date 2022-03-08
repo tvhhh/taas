@@ -1,7 +1,5 @@
 import os
 import json
-from typing import Optional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,8 +7,13 @@ import torch.nn.functional as F
 from transformers.modeling_utils import PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput, Seq2SeqLMOutput
 from transformers.models.pegasus.modeling_pegasus import PegasusEncoder, PegasusDecoder, PegasusModel
+from typing import Optional
 
 from .configuration_sus import SusConfig
+
+
+NTM_CONFIG_FILE_NAME = "config.json"
+NTM_MODEL_STATE_FILE_NAME = "model_state.pt"
 
 
 def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
@@ -118,7 +121,7 @@ class SusNeuralTopicModel(nn.Module):
         os.makedirs(save_directory, exist_ok=True)
 
         # Save configuration
-        config_file = os.path.join(save_directory, "config.json")
+        config_file = os.path.join(save_directory, NTM_CONFIG_FILE_NAME)
         config_dict = self.config.__dict__.copy()
         saved_config_dict = {
             attr: config_dict[attr] for attr in ("bow_size", "ntm_dropout", "topic_dim")
@@ -129,21 +132,21 @@ class SusNeuralTopicModel(nn.Module):
             writer.write(_to_json_string(saved_config_dict))
         
         # Save model state dict
-        state_dict_file = os.path.join(save_directory, "model_state.pt")
+        state_dict_file = os.path.join(save_directory, NTM_MODEL_STATE_FILE_NAME)
         state_dict = self.state_dict()
         torch.save(state_dict, state_dict_file)
     
     @classmethod
     def from_pretrained(cls, pretrained_model_path):
         # Load configuration
-        config_file = os.path.join(pretrained_model_path, "config.json")
+        config_file = os.path.join(pretrained_model_path, NTM_CONFIG_FILE_NAME)
         with open(config_file, "r") as reader:
             config_dict = json.load(reader)
         config = SusConfig(**config_dict)
 
         # Load model state dict
         ntm = cls(config)
-        state_dict_file = os.path.join(pretrained_model_path, "model_state.pt")
+        state_dict_file = os.path.join(pretrained_model_path, NTM_MODEL_STATE_FILE_NAME)
         state_dict = torch.load(state_dict_file)
         ntm.load_state_dict(state_dict)
 

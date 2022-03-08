@@ -1,18 +1,14 @@
 import json
 import os
 import re
-
 import torch
-from torch.utils.data import DataLoader
 
+from data.doc_dataset import DocDataset
 from datasets import load_dataset, load_from_disk
-from data import BowDataset
-
+from gensim.models.coherencemodel import CoherenceModel
 from models.configuration_sus import SusConfig
 from models.modeling_sus import SusNeuralTopicModel
-
-from gensim.models.coherencemodel import CoherenceModel
-
+from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 
@@ -220,12 +216,13 @@ def train_ntm(args):
     
     # Prepare data for neural topic model training
     train_set, eval_set = (
-        BowDataset(
+        DocDataset(
             [doc.split() for doc in dataset[s]["corpus"]],
-            args.ntm_dict_path,
+            args.ntm_corpus_path,
             args.ntm_dict_filter_no_below,
             args.ntm_dict_filter_no_above,
             args.ntm_max_vocab_size,
+            args.ntm_use_tfidf,
         ) for s in ("train", "validation")
     )
 

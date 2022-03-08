@@ -1,10 +1,8 @@
 import collections
-from typing import List, Optional
-
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, IterableDataset
 
+from torch.utils.data import DataLoader, IterableDataset
 from transformers.deepspeed import deepspeed_init
 from transformers.trainer import Trainer, logger
 from transformers.trainer_pt_utils import (
@@ -19,6 +17,7 @@ from transformers.trainer_utils import (
     EvalPrediction,
     denumpify_detensorize,
 )
+from typing import List, Optional
 
 
 class CustomHFTrainer(Trainer):

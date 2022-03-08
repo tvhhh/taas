@@ -32,11 +32,12 @@ if __name__ == "__main__":
     parser.add_argument("-freeze_encoder_layers", type=int, default=None)
     
     parser.add_argument("-pretrained_ntm_path", type=str, default=None)
-    parser.add_argument("-ntm_dict_path", type=str, default=None)
+    parser.add_argument("-ntm_corpus_path", type=str, default=None)
     parser.add_argument("-ntm_dict_filter_no_below", type=int, default=2)
     parser.add_argument("-ntm_dict_filter_no_above", type=float, default=0.5)
     parser.add_argument("-ntm_max_vocab_size", type=int, default=100000)
     parser.add_argument("-ntm_topic_dim", type=int, default=100)
+    parser.add_argument("-ntm_use_tfidf", type=str2bool, nargs="?", default=False)
 
     parser.add_argument("-max_input_length", type=int, default=1024)
     parser.add_argument("-max_target_length", type=int, default=128)
