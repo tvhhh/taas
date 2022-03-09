@@ -56,7 +56,7 @@ class DocDataset(Dataset):
     def __getitem__(self, index):
         vec = torch.zeros(self.vocab_size)
 
-        ids, vals = None
+        ids, vals = None, None
         if self.use_tfidf:
             ids, vals = zip(*self.tfidf[index])
         else:

@@ -150,12 +150,12 @@ class NTMTrainer:
             for topic_i_words in topic_words:
                 fmt_output += str(topic_i_words) + "\n"
             fmt_output += "-"*100 + "\n"
-        fmt_output += str(metrics) + "\n" + "="*50
+        fmt_output += str(metrics) + "\n" + "="*100
 
         with open(os.path.join(self.logging_dir, self.LOGGING_FILE), "a+") as writer:
             writer.write(fmt_output + "\n")
 
-        print(f"Step {self.state.train_progress}:\n" + str(metrics) + "\n" + "="*50)
+        print(f"Step {self.state.train_progress}:\n" + str(metrics) + "\n")
     
     def evaluation_loop(self):
         if self.eval_progress is None:
@@ -174,24 +174,24 @@ class NTMTrainer:
                 self.eval_progress.update(1)
         eval_loss /= len(self.eval_loader)
 
-        if self.compute_metrics:
-            ntm_metrics, topic_words = self.compute_metrics()
-            return {**ntm_metrics, "eval_loss": eval_loss}, topic_words
-        else:
-            return {"eval_loss": eval_loss}, None
-
-    def compute_metrics(self):
-        dictionary = self.train_set.dictionary
         topic_words = self.model.get_top_topic_words()
         topic_words = [
-            [dictionary.id2token[word_id] for word_id in topic_i_words]
+            [self.train_set.dictionary.id2token[word_id] for word_id in topic_i_words]
             for topic_i_words in topic_words
         ]
+
+        if self.compute_metrics:
+            ntm_metrics = self.compute_ntm_metrics(topic_words)
+            return {**ntm_metrics, "eval_loss": eval_loss}, topic_words
+        else:
+            return {"eval_loss": eval_loss}, topic_words
+
+    def compute_ntm_metrics(self, topic_words):
         c_v_coherence_model, c_uci_coherence_model, u_mass_coherence_model = (
             CoherenceModel(
                 topics=topic_words,
-                texts=(self.train_set.documents + self.eval_set.documents),
-                corpus=(self.train_set.bows + self.eval_set.bows),
+                texts=self.eval_set.documents,
+                corpus=self.eval_set.bows,
                 dictionary=self.train_set.dictionary,
                 coherence=coherence_metric,
             ) for coherence_metric in ("c_v", "c_uci", "u_mass")
@@ -199,7 +199,7 @@ class NTMTrainer:
         c_v = c_v_coherence_model.get_coherence()
         c_uci = c_uci_coherence_model.get_coherence()
         u_mass = u_mass_coherence_model.get_coherence()
-        return {"c_v": c_v, "c_uci": c_uci, "u_mass": u_mass}, topic_words
+        return {"c_v": c_v, "c_uci": c_uci, "u_mass": u_mass}
 
     def save_training_state(self, save_directory):
         training_state_file = os.path.join(save_directory, self.TRAINING_STATE_FILE)

@@ -95,9 +95,9 @@ class SusModel(SusPreTrainedModel):
                 ntm_config = config.to_ntm_config()
                 self.neural_topic_model = NeuralTopicModel(**ntm_config)
             
-            self.topic_weights = nn.Parameter(torch.empty((config.n_topics, config.d_model), dtype=torch.float, device=self.device))
-            self.hidden_state_weights = nn.Parameter(torch.empty((config.d_model, config.d_model), dtype=torch.float, device=self.device))
-            self.gating_bias = nn.Parameter(torch.zeros(config.d_model, dtype=torch.float, device=self.device))
+            self.topic_weights = nn.Parameter(torch.empty((config.n_topics, config.d_model)))
+            self.hidden_state_weights = nn.Parameter(torch.empty((config.d_model, config.d_model)))
+            self.gating_bias = nn.Parameter(torch.zeros(config.d_model))
             nn.init.xavier_normal_(self.topic_weights)
             nn.init.xavier_normal_(self.hidden_state_weights)
     

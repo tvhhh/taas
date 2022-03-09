@@ -25,7 +25,7 @@ class InferenceNetwork(nn.Module):
         
         self.encoder = nn.Sequential(*(
             nn.Sequential(nn.Linear(h_in, h_out), self.activation, self.dropout)
-            for h_in, h_out in zip([vocab_size] + hidden_sizes[:-1], hidden_sizes)
+            for h_in, h_out in zip(type(hidden_sizes)([vocab_size]) + hidden_sizes[:-1], hidden_sizes)
         ))
 
         self.fc_mu = nn.Linear(hidden_sizes[-1], n_topics)
@@ -52,7 +52,7 @@ class GeneratorNetwork(nn.Module):
         super().__init__()
 
         self.topic_word_dist = nn.Parameter(
-            torch.empty((n_topics, vocab_size), dtype=torch.float, device=self.device)
+            torch.empty((n_topics, vocab_size))
         )
         nn.init.xavier_uniform_(self.topic_word_dist)
 
@@ -60,10 +60,6 @@ class GeneratorNetwork(nn.Module):
     
     def forward(self, z):
         return self.batchnorm_generator(torch.matmul(z, self.topic_word_dist))
-    
-    @property
-    def device(self):
-        return next(self.parameters()).device
 
 
 class NeuralTopicModel(nn.Module):
@@ -105,8 +101,8 @@ class NeuralTopicModel(nn.Module):
         }
         
         p_mean, p_variance = prior_params
-        self.prior_mean = torch.tensor([p_mean] * n_topics, dtype=torch.float)
-        self.prior_variance = torch.tensor([p_variance] * n_topics, dtype=torch.float)
+        self.register_buffer("prior_mean", torch.tensor([p_mean] * n_topics))
+        self.register_buffer("prior_variance", torch.tensor([p_variance] * n_topics))
 
         self.inference_network = InferenceNetwork(vocab_size, n_topics, hidden_sizes, activation, dropout)
         self.generator_network = GeneratorNetwork(vocab_size, n_topics)
