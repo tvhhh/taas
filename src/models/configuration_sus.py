@@ -1,10 +1,11 @@
 from transformers.configuration_utils import PretrainedConfig
 from transformers.models.pegasus.configuration_pegasus import PegasusConfig
+from typing import Any, Dict
 
 
 class SusConfig(PretrainedConfig):
     keys_to_ignore_at_inference = ["past_key_values"]
-    keys_to_ignore_pegasus = ["bow_size", "ntm_dropout", "topic_dim"]
+    keys_to_ignore_pegasus = ["use_ntm", "corpus_size", "n_topics", "ntm_activation", "ntm_dropout", "ntm_prior_params", "ntm_loss_weight"]
     attribute_map = {
         "num_attention_heads": "encoder_attention_heads",
         "hidden_size": "d_model",
@@ -33,9 +34,14 @@ class SusConfig(PretrainedConfig):
         decoder_start_token_id=0,
         classifier_dropout=0.0,
         scale_embedding=False,
-        bow_size=100000,
+        corpus_size=100000,
+        use_ntm=True,
+        n_topics=100,
+        ntm_hidden_sizes=(1024,512,256),
+        ntm_activation="softplus",
         ntm_dropout=0.0,
-        topic_dim=100,
+        ntm_prior_params=(0,1),
+        ntm_loss_weight=0.1,
         pad_token_id=0,
         eos_token_id=1,
         forced_eos_token_id=1,
@@ -61,9 +67,16 @@ class SusConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.num_hidden_layers = encoder_layers
         self.scale_embedding = scale_embedding
-        self.bow_size = bow_size
+        
+        self.use_ntm = use_ntm
+        self.corpus_size = corpus_size
+        self.n_topics = n_topics
+        self.ntm_hidden_sizes = ntm_hidden_sizes
+        self.ntm_activation = ntm_activation
         self.ntm_dropout = ntm_dropout
-        self.topic_dim = topic_dim
+        self.ntm_prior_params = ntm_prior_params
+        self.ntm_loss_weight = ntm_loss_weight
+        
         super().__init__(
             pad_token_id=pad_token_id,
             eos_token_id=eos_token_id,
@@ -86,3 +99,25 @@ class SusConfig(PretrainedConfig):
     def copy_pegasus_config(self, config: PegasusConfig):
         pegasus_config_dict = config.__dict__.copy()
         self.__dict__ = {**self.__dict__, **pegasus_config_dict}
+    
+    def to_ntm_config(self) -> Dict[str, Any]:
+        return {
+            "vocab_size": self.corpus_size,
+            "n_topics": self.n_topics,
+            "hidden_sizes": self.ntm_hidden_sizes,
+            "activation": self.ntm_activation,
+            "dropout": self.ntm_dropout,
+            "prior_params": self.ntm_prior_params,
+        }
+
+    def copy_ntm_config(self, config: Dict[str, Any]):
+        mapped_attrs = {
+            "corpus_size": "vocab_size",
+            "n_topics": "n_topics",
+            "ntm_hidden_sizes": "hidden_sizes",
+            "ntm_activation": "activation",
+            "ntm_dropout": "dropout",
+            "ntm_prior_params": "prior_params",
+        }
+        for attr, ntm_attr in mapped_attrs.items():
+            self.__dict__[attr] = config[ntm_attr]

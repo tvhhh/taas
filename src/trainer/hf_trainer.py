@@ -20,7 +20,7 @@ from transformers.trainer_utils import (
 from typing import List, Optional
 
 
-class CustomHFTrainer(Trainer):
+class HFTrainer(Trainer):
     def evaluation_loop(
         self,
         dataloader: DataLoader,

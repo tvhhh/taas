@@ -30,13 +30,16 @@ if __name__ == "__main__":
     parser.add_argument("-pretrained_model_path", type=str, default=None)
     parser.add_argument("-pretrained_pegasus_large_path", type=str, default=None)
     parser.add_argument("-freeze_encoder_layers", type=int, default=None)
+    parser.add_argument("-use_ntm", type=str2bool, nargs="?", default=True)
     
     parser.add_argument("-pretrained_ntm_path", type=str, default=None)
     parser.add_argument("-ntm_corpus_path", type=str, default=None)
     parser.add_argument("-ntm_dict_filter_no_below", type=int, default=2)
     parser.add_argument("-ntm_dict_filter_no_above", type=float, default=0.5)
     parser.add_argument("-ntm_max_vocab_size", type=int, default=100000)
-    parser.add_argument("-ntm_topic_dim", type=int, default=100)
+    parser.add_argument("-ntm_num_topics", type=int, default=100)
+    parser.add_argument("-ntm_activation", type=str, choices=["softplus", "relu"], default="softplus")
+    parser.add_argument("-ntm_dropout", type=float, default=0.0)
     parser.add_argument("-ntm_use_tfidf", type=str2bool, nargs="?", default=False)
 
     parser.add_argument("-max_input_length", type=int, default=1024)
@@ -63,7 +66,7 @@ if __name__ == "__main__":
     parser.add_argument("-load_best_at_end", type=str2bool, nargs="?", default=True)
     parser.add_argument("-metric_load_best", type=str, default="loss")
     parser.add_argument("-greater_better", type=str2bool, nargs="?", default=False)
-    parser.add_argument("-from_checkpoint", type=str2bool, nargs="?", default=False)
+    parser.add_argument("-resume_from_checkpoint", type=str2bool, nargs="?", default=False)
     parser.add_argument("-compute_metrics", type=str2bool, nargs="?", default=True)
     parser.add_argument("-evaluate_first_step", type=str2bool, nargs="?", default=False)
 

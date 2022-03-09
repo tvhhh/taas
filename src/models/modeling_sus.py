@@ -1,19 +1,15 @@
-import os
-import json
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
+from dataclasses import dataclass
+from transformers.file_utils import ModelOutput
 from transformers.modeling_utils import PreTrainedModel
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput, Seq2SeqLMOutput
 from transformers.models.pegasus.modeling_pegasus import PegasusEncoder, PegasusDecoder, PegasusModel
-from typing import Optional
+from typing import Optional, Tuple
 
 from .configuration_sus import SusConfig
-
-
-NTM_CONFIG_FILE_NAME = "config.json"
-NTM_MODEL_STATE_FILE_NAME = "model_state.pt"
+from .modeling_topic import NeuralTopicModel
 
 
 def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
@@ -33,128 +29,17 @@ def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start
     return shifted_input_ids
 
 
-class SusNeuralTopicModel(nn.Module):
-    def __init__(self, config: SusConfig):
-        super().__init__()
-
-        self.config = config
-
-        vae_hidden_dims = (1024, 512, 256)
-        encoder_dims = vae_hidden_dims
-        decoder_dims = vae_hidden_dims[::-1]
-        
-        self.encoder = nn.ModuleList([
-            nn.Linear(encoder_dims[i-1] if i > 0 else config.bow_size, encoder_dims[i])
-            for i in range(len(encoder_dims))
-        ])
-        
-        self.fc_mu = nn.Linear(vae_hidden_dims[-1], config.topic_dim)
-        self.fc_logvar = nn.Linear(vae_hidden_dims[-1], config.topic_dim)
-        self.fc_theta = nn.Linear(config.topic_dim, config.topic_dim)
-        
-        self.decoder = nn.ModuleList([nn.Linear(config.topic_dim, decoder_dims[0])] + [
-            nn.Linear(decoder_dims[i], decoder_dims[i+1] if i < len(decoder_dims)-1 else config.bow_size)
-            for i in range(len(decoder_dims))
-        ])
-
-        self.dropout = nn.Dropout(p=config.ntm_dropout)
-    
-    def reparameterize(self, mu, log_var):
-        std = torch.exp(log_var * 0.5)
-        eps = torch.randn_like(std, requires_grad=False)
-        return eps.mul(std).add_(mu)
-   
-    def encode(self, x):
-        hid = x
-        for layer in self.encoder:
-            hid = F.relu(self.dropout(layer(hid)))
-        
-        mu, logvar = self.fc_mu(hid), self.fc_logvar(hid)
-        
-        return mu, logvar
-
-    def decode(self, z):
-        hid = z
-        for i, layer in enumerate(self.decoder):
-            hid = layer(hid)
-            if i < len(self.decoder) - 1:
-                hid = F.relu(self.dropout(hid))
-        return hid
-    
-    def inference(self, x):
-        mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar)
-        
-        theta = self.fc_theta(z)
-        theta = torch.softmax(theta, dim=1)
-
-        return theta
-
-    def forward(self, x, output_loss=True):
-        mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar)
-        
-        theta = self.fc_theta(z)
-        theta = torch.softmax(theta, dim=1)
-        
-        x_recons = self.decode(theta)
-        
-        loss = None
-        if output_loss:
-            logsoftmax = torch.log_softmax(x_recons, dim=1)
-            rec_loss = -1.0 * torch.sum(x * logsoftmax)
-            kl_div = -0.5 * torch.sum(1 + logvar - mu**2 - torch.exp(logvar))
-            loss = (rec_loss + kl_div) / x.size(0)
-        
-        outputs = tuple(t for t in (x_recons, theta, loss) if t is not None)
-
-        return outputs
-    
-    def get_top_topic_words(self, topK=10):
-        z = torch.eye(self.config.topic_dim).to(self.device)
-        word_dist = torch.softmax(self.decode(z), dim=1)
-        _, word_ids = torch.topk(word_dist, topK, dim=1)
-        word_ids = word_ids.cpu().tolist()
-        return word_ids
-    
-    def save_pretrained(self, save_directory):
-        os.makedirs(save_directory, exist_ok=True)
-
-        # Save configuration
-        config_file = os.path.join(save_directory, NTM_CONFIG_FILE_NAME)
-        config_dict = self.config.__dict__.copy()
-        saved_config_dict = {
-            attr: config_dict[attr] for attr in ("bow_size", "ntm_dropout", "topic_dim")
-        }
-        def _to_json_string(config_dict):
-            return json.dumps(config_dict, indent=2, sort_keys=True) + "\n"
-        with open(config_file, "w", encoding="utf-8") as writer:
-            writer.write(_to_json_string(saved_config_dict))
-        
-        # Save model state dict
-        state_dict_file = os.path.join(save_directory, NTM_MODEL_STATE_FILE_NAME)
-        state_dict = self.state_dict()
-        torch.save(state_dict, state_dict_file)
-    
-    @classmethod
-    def from_pretrained(cls, pretrained_model_path):
-        # Load configuration
-        config_file = os.path.join(pretrained_model_path, NTM_CONFIG_FILE_NAME)
-        with open(config_file, "r") as reader:
-            config_dict = json.load(reader)
-        config = SusConfig(**config_dict)
-
-        # Load model state dict
-        ntm = cls(config)
-        state_dict_file = os.path.join(pretrained_model_path, NTM_MODEL_STATE_FILE_NAME)
-        state_dict = torch.load(state_dict_file)
-        ntm.load_state_dict(state_dict)
-
-        return ntm
-    
-    @property
-    def device(self):
-        return next(self.parameters()).device
+@dataclass
+class SusModelOutput(ModelOutput):
+    last_hidden_state: torch.FloatTensor = None
+    past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
+    decoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    decoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    cross_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_last_hidden_state: Optional[torch.FloatTensor] = None
+    encoder_hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    encoder_attentions: Optional[Tuple[torch.FloatTensor]] = None
+    topic_model_loss: Optional[torch.FloatTensor] = None
 
 
 class SusPreTrainedModel(PreTrainedModel):
@@ -179,27 +64,42 @@ class SusPreTrainedModel(PreTrainedModel):
 
 
 class SusModel(SusPreTrainedModel):
-    def __init__(self, config: SusConfig, pretrained_pegasus_path: Optional[str] = None):
+    def __init__(
+        self,
+        config: SusConfig,
+        pretrained_pegasus_path: Optional[str] = None,
+        pretrained_ntm_path: Optional[str] = None,
+    ):
         super().__init__(config)
 
         if pretrained_pegasus_path is not None:
             pegasus = PegasusModel.from_pretrained(pretrained_pegasus_path)
-            
             config.copy_pegasus_config(pegasus.config)
-            
             self.shared_embed = pegasus.get_input_embeddings()
-            
             self.encoder = pegasus.get_encoder()
             self.decoder = pegasus.get_decoder()
-            
         else:
             padding_idx, vocab_size = config.pad_token_id, config.vocab_size
-            
             self.shared_embed = nn.Embedding(vocab_size, config.d_model, padding_idx)
-            
             pegasus_config = config.to_pegasus_config()
             self.encoder = PegasusEncoder(pegasus_config, embed_tokens=self.shared_embed)
             self.decoder = PegasusDecoder(pegasus_config, embed_tokens=self.shared_embed)
+            self.encoder.post_init()
+            self.decoder.post_init()
+        
+        if config.use_ntm:
+            if pretrained_ntm_path is not None:
+                self.neural_topic_model = NeuralTopicModel.from_pretrained(pretrained_ntm_path)
+                config.copy_ntm_config(self.neural_topic_model.config)
+            else:
+                ntm_config = config.to_ntm_config()
+                self.neural_topic_model = NeuralTopicModel(**ntm_config)
+            
+            self.topic_weights = nn.Parameter(torch.empty((config.n_topics, config.d_model), dtype=torch.float, device=self.device))
+            self.hidden_state_weights = nn.Parameter(torch.empty((config.d_model, config.d_model), dtype=torch.float, device=self.device))
+            self.gating_bias = nn.Parameter(torch.zeros(config.d_model, dtype=torch.float, device=self.device))
+            nn.init.xavier_normal_(self.topic_weights)
+            nn.init.xavier_normal_(self.hidden_state_weights)
     
     def get_encoder(self):
         return self.encoder
@@ -257,6 +157,11 @@ class SusModel(SusPreTrainedModel):
                 hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
                 attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
             )
+        
+        # Integrate encoder outputs with topic distribution
+        ntm_loss = None
+        if self.config.use_ntm:
+            pass
 
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
@@ -275,9 +180,10 @@ class SusModel(SusPreTrainedModel):
         )
 
         if not return_dict:
-            return decoder_outputs + encoder_outputs
+            outputs = decoder_outputs + encoder_outputs
+            return outputs + (ntm_loss,) if self.config.use_ntm else outputs
 
-        return Seq2SeqModelOutput(
+        return SusModelOutput(
             last_hidden_state=decoder_outputs.last_hidden_state,
             past_key_values=decoder_outputs.past_key_values,
             decoder_hidden_states=decoder_outputs.hidden_states,
@@ -286,16 +192,23 @@ class SusModel(SusPreTrainedModel):
             encoder_last_hidden_state=encoder_outputs.last_hidden_state,
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
+            topic_model_loss=ntm_loss,
         )
 
 
 class SusForConditionalGeneration(SusPreTrainedModel):
-    def __init__(self, config: SusConfig, pretrained_pegasus_path: Optional[str] = None):
+    def __init__(
+        self,
+        config: SusConfig,
+        pretrained_pegasus_path: Optional[str] = None,
+        pretrained_ntm_path: Optional[str] = None,
+    ):
         super().__init__(config)
 
         self.model = SusModel(
             config=config,
             pretrained_pegasus_path=pretrained_pegasus_path,
+            pretrained_ntm_path=pretrained_ntm_path,
         )
 
         self.lm_head = nn.Linear(config.d_model, config.vocab_size)

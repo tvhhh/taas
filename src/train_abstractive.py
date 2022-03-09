@@ -4,7 +4,7 @@ import numpy as np
 from datasets import load_dataset, load_from_disk, load_metric
 from models.configuration_sus import SusConfig
 from models.modeling_sus import SusForConditionalGeneration
-from trainer.hf_trainer import CustomHFTrainer
+from trainer.hf_trainer import HFTrainer
 from transformers.data.data_collator import DataCollatorForSeq2Seq
 from transformers.models.pegasus.tokenization_pegasus import PegasusTokenizer
 from transformers.training_args import TrainingArguments
@@ -132,7 +132,7 @@ def train_abs(args):
         metric_for_best_model=args.metric_load_best,
         greater_is_better=args.greater_better,
     )
-    trainer = CustomHFTrainer(
+    trainer = HFTrainer(
         model=sus,
         args=training_args,
         data_collator=data_collator,
@@ -145,4 +145,4 @@ def train_abs(args):
     if args.evaluate_first_step:
         trainer.evaluate()
     
-    trainer.train(resume_from_checkpoint=args.from_checkpoint)
+    trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
