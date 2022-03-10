@@ -28,12 +28,10 @@ if __name__ == "__main__":
     parser.add_argument("-pretrained_tokenizer_path", type=str, default=None)
     
     parser.add_argument("-pretrained_model_path", type=str, default=None)
-    parser.add_argument("-pretrained_pegasus_large_path", type=str, default=None)
     parser.add_argument("-freeze_encoder_layers", type=int, default=None)
     
     parser.add_argument("-use_ntm", type=str2bool, nargs="?", default=True)
     parser.add_argument("-ntm_loss_weight", type=float, default=0.1)
-    
     parser.add_argument("-pretrained_ntm_path", type=str, default=None)
     parser.add_argument("-ntm_corpus_path", type=str, default=None)
     parser.add_argument("-ntm_dict_filter_no_below", type=int, default=2)
@@ -58,13 +56,14 @@ if __name__ == "__main__":
     parser.add_argument("-train_batch_size", type=int, default=1)
     parser.add_argument("-train_epochs", type=int, default=5)
     parser.add_argument("-train_steps", type=int, default=-1)
+    parser.add_argument("-gradient_accumulation_steps", type=int, default=1)
     parser.add_argument("-lr", type=float, default=1e-5)
     parser.add_argument("-beta1", type=float, default=0.9)
     parser.add_argument("-beta2", type=float, default=0.999)
     parser.add_argument("-epsilon", type=float, default=1e-8)
     parser.add_argument("-weight_decay", type=float, default=0)
-    parser.add_argument("-gradient_accumulation_steps", type=int, default=1)
     parser.add_argument("-warmup_ratio", type=float, default=0)
+    parser.add_argument("-warmup_steps", type=int, default=0)
     parser.add_argument("-load_best_at_end", type=str2bool, nargs="?", default=True)
     parser.add_argument("-metric_load_best", type=str, default="loss")
     parser.add_argument("-greater_better", type=str2bool, nargs="?", default=False)

@@ -53,8 +53,7 @@ def _prepare_data(
     return dataset.map(_process_data, batched=True)
 
 
-rouge = load_metric("rouge")
-def _compute_metrics(p, tokenizer):
+def _compute_metrics(p, tokenizer, rouge):
     (predictions, _), labels = p
     
     predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
@@ -74,6 +73,8 @@ def _compute_metrics(p, tokenizer):
 
 def train_abs(args):
 
+    nltk.download("punkt")
+
     # Load preprocessed dataset
     dataset = None
     if args.load_data_from_disk:
@@ -84,17 +85,36 @@ def train_abs(args):
     # Load pretrained tokenizer for PEGASUS
     tokenizer = PegasusTokenizer.from_pretrained(args.pretrained_tokenizer_path)
 
+    # Use gensim dictionary if use neural topic model
+    dictionary = None
+    if args.use_ntm:
+        dictionary = Dictionary.load_from_text(os.path.join(args.ntm_corpus_path, "dict.txt"))
+
     # Load or initialize model
     sus = None
     if args.pretrained_model_path is not None:
-        sus = SusForConditionalGeneration.from_pretrained(args.pretrained_model_path)
-    else:
-        config = SusConfig(ntm_loss_weight=args.ntm_loss_weight)
-        sus = SusForConditionalGeneration(
-            config,
-            args.pretrained_pegasus_large_path,
-            args.pretrained_ntm_path,
+        sus = SusForConditionalGeneration.from_pretrained(
+            args.pretrained_model_path,
+            use_ntm=args.use_ntm,
+            corpus_size=(len(dictionary.token2id) if dictionary else 20000),
+            n_topics=args.ntm_num_topics,
+            ntm_activation=args.ntm_activation,
+            ntm_dropout=args.ntm_dropout,
+            ntm_loss_weight=args.ntm_loss_weight,
         )
+    else:
+        config = SusConfig(
+            use_ntm=args.use_ntm,
+            corpus_size=(len(dictionary.token2id) if dictionary else 20000),
+            n_topics=args.ntm_num_topics,
+            ntm_activation=args.ntm_activation,
+            ntm_dropout=args.ntm_dropout,
+            ntm_loss_weight=args.ntm_loss_weight,
+        )
+        sus = SusForConditionalGeneration(config)
+    
+    if args.pretrained_ntm_path is not None:
+        sus.load_pretrained_ntm(args.pretrained_ntm_path)
     
     # Freeze encoder layers
     if args.freeze_encoder_layers is not None:
@@ -106,11 +126,6 @@ def train_abs(args):
     
     # Use data collator for padding
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=sus)
-
-    # Use gensim dictionary if use neural topic model
-    dictionary = None
-    if args.use_ntm:
-        dictionary = Dictionary.load_from_text(os.path.join(args.ntm_corpus_path, "dict.txt"))
     
     # Prepare data for abstractive summarization training
     train_set, eval_set = (
@@ -121,19 +136,20 @@ def train_abs(args):
             args.data_label_name,
             args.max_input_length,
             args.max_target_length,
-            dictionary
+            dictionary,
         ) for s in ("train", "validation")
     )
 
     # Use compute_metrics for validation during training
     compute_metrics = None
     if args.compute_metrics:
-        compute_metrics = lambda p: _compute_metrics(p, tokenizer)
+        rouge = load_metric("rouge")
+        compute_metrics = lambda p: _compute_metrics(p, tokenizer, rouge)
 
     # Use HuggingFace Trainer API
     training_args = TrainingArguments(
         output_dir=args.output_dir,
-        overwrite_output_dir=(not args.from_checkpoint),
+        overwrite_output_dir=(not args.resume_from_checkpoint),
         evaluation_strategy=args.eval_strategy,
         per_device_train_batch_size=args.train_batch_size,
         per_device_eval_batch_size=args.eval_batch_size,
@@ -147,6 +163,7 @@ def train_abs(args):
         num_train_epochs=args.train_epochs,
         max_steps=args.train_steps,
         warmup_ratio=args.warmup_ratio,
+        warmup_steps=args.warmup_steps,
         logging_dir=args.logging_dir,
         logging_strategy=args.logging_strategy,
         logging_steps=args.logging_steps,

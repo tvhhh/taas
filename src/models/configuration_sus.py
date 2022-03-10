@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 
 class SusConfig(PretrainedConfig):
+    model_type = "pegasus"
     keys_to_ignore_at_inference = ["past_key_values"]
     keys_to_ignore_pegasus = ["use_ntm", "corpus_size", "n_topics", "ntm_activation", "ntm_dropout", "ntm_prior_params", "ntm_loss_weight"]
     attribute_map = {
