@@ -30,7 +30,9 @@ if __name__ == "__main__":
     parser.add_argument("-pretrained_model_path", type=str, default=None)
     parser.add_argument("-pretrained_pegasus_large_path", type=str, default=None)
     parser.add_argument("-freeze_encoder_layers", type=int, default=None)
+    
     parser.add_argument("-use_ntm", type=str2bool, nargs="?", default=True)
+    parser.add_argument("-ntm_loss_weight", type=float, default=0.1)
     
     parser.add_argument("-pretrained_ntm_path", type=str, default=None)
     parser.add_argument("-ntm_corpus_path", type=str, default=None)

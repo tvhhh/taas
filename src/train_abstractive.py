@@ -1,7 +1,9 @@
 import nltk
 import numpy as np
+import os
 
 from datasets import load_dataset, load_from_disk, load_metric
+from gensim.corpora import Dictionary
 from models.configuration_sus import SusConfig
 from models.modeling_sus import SusForConditionalGeneration
 from trainer.hf_trainer import HFTrainer
@@ -17,6 +19,7 @@ def _prepare_data(
     label_name,
     max_input_length=1024,
     max_target_length=128,
+    dictionary=None,
 ):
     def _process_data(examples):
         model_inputs = tokenizer(
@@ -32,6 +35,18 @@ def _prepare_data(
                 truncation=True,
             )
         model_inputs["labels"] = labels["input_ids"]
+
+        if dictionary is not None:
+            gensim_bows = [
+                dictionary.doc2bow(doc.split())
+                for doc in examples["corpus"]
+            ]
+            bows = np.zeros((len(examples["corpus"]), len(dictionary.token2id)))
+            for i, bow in enumerate(gensim_bows):
+                if len(bow) > 0:
+                    ids, freqs = zip(*bow)
+                    bows[i][list(ids)] = list(freqs)
+            model_inputs["bag_of_words"] = bows.tolist()
         
         return model_inputs
 
@@ -74,8 +89,12 @@ def train_abs(args):
     if args.pretrained_model_path is not None:
         sus = SusForConditionalGeneration.from_pretrained(args.pretrained_model_path)
     else:
-        config = SusConfig()
-        sus = SusForConditionalGeneration(config, args.pretrained_pegasus_large_path)
+        config = SusConfig(ntm_loss_weight=args.ntm_loss_weight)
+        sus = SusForConditionalGeneration(
+            config,
+            args.pretrained_pegasus_large_path,
+            args.pretrained_ntm_path,
+        )
     
     # Freeze encoder layers
     if args.freeze_encoder_layers is not None:
@@ -86,7 +105,12 @@ def train_abs(args):
                 param.requires_grad = False
     
     # Use data collator for padding
-    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer,model=sus)
+    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=sus)
+
+    # Use gensim dictionary if use neural topic model
+    dictionary = None
+    if args.use_ntm:
+        dictionary = Dictionary.load_from_text(os.path.join(args.ntm_corpus_path, "dict.txt"))
     
     # Prepare data for abstractive summarization training
     train_set, eval_set = (
@@ -96,8 +120,9 @@ def train_abs(args):
             args.data_input_name,
             args.data_label_name,
             args.max_input_length,
-            args.max_target_length)
-        for s in ("train", "validation")
+            args.max_target_length,
+            dictionary
+        ) for s in ("train", "validation")
     )
 
     # Use compute_metrics for validation during training

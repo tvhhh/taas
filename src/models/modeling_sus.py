@@ -4,8 +4,13 @@ import torch.nn as nn
 from dataclasses import dataclass
 from transformers.file_utils import ModelOutput
 from transformers.modeling_utils import PreTrainedModel
-from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput, Seq2SeqLMOutput
-from transformers.models.pegasus.modeling_pegasus import PegasusEncoder, PegasusDecoder, PegasusModel
+from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
+from transformers.models.pegasus.modeling_pegasus import (
+    PegasusEncoder,
+    PegasusDecoder,
+    PegasusModel,
+    PegasusSinusoidalPositionalEmbedding
+)
 from typing import Optional, Tuple
 
 from .configuration_sus import SusConfig
@@ -53,6 +58,8 @@ class SusPreTrainedModel(PreTrainedModel):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.bias is not None:
                 module.bias.data.zero_()
+        elif isinstance(module, PegasusSinusoidalPositionalEmbedding):
+            pass
         elif isinstance(module, nn.Embedding):
             module.weight.data.normal_(mean=0.0, std=std)
             if module.padding_idx is not None:
@@ -132,6 +139,7 @@ class SusModel(SusPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        bag_of_words=None,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -158,10 +166,20 @@ class SusModel(SusPreTrainedModel):
                 attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
             )
         
-        # Integrate encoder outputs with topic distribution
+        # Integrate latent topics distribution into encoder outputs
         ntm_loss = None
-        if self.config.use_ntm:
-            pass
+        if self.config.use_ntm and bag_of_words is not None:
+            posterior_params, word_dist, theta = self.neural_topic_model(bag_of_words)
+            ntm_loss = self.neural_topic_model.loss(*posterior_params, word_dist, bag_of_words)
+            gate_vec = torch.sigmoid(
+                torch.matmul(theta, self.topic_weights).unsqueeze(1) +          # (batch_size * d_model) -> unsqueeze(1)
+                torch.matmul(encoder_outputs[0], self.hidden_state_weights) +   # (batch_size * sequence_length * d_model)
+                self.gating_bias                                                # (d_model) -> automatically use last dim
+            )
+            if isinstance(encoder_outputs, BaseModelOutput):
+                encoder_outputs["last_hidden_state"] = torch.mul(gate_vec, encoder_outputs[0])
+            elif isinstance(encoder_outputs, tuple):
+                encoder_outputs[0] = torch.mul(gate_vec, encoder_outputs[0])
 
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
@@ -211,13 +229,28 @@ class SusForConditionalGeneration(SusPreTrainedModel):
             pretrained_ntm_path=pretrained_ntm_path,
         )
 
-        self.lm_head = nn.Linear(config.d_model, config.vocab_size)
+        self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+        self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared_embed.num_embeddings)))
     
     def get_encoder(self):
         return self.model.get_encoder()
     
     def get_decoder(self):
         return self.model.get_decoder()
+    
+    def resize_token_embeddings(self, new_num_tokens: int) -> nn.Embedding:
+        new_embeddings = super().resize_token_embeddings(new_num_tokens)
+        self._resize_final_logits_bias(new_num_tokens)
+        return new_embeddings
+    
+    def _resize_final_logits_bias(self, new_num_tokens: int) -> None:
+        old_num_tokens = self.final_logits_bias.shape[-1]
+        if new_num_tokens <= old_num_tokens:
+            new_bias = self.final_logits_bias[:, :new_num_tokens]
+        else:
+            extra_bias = torch.zeros((1, new_num_tokens - old_num_tokens), device=self.final_logits_bias.device)
+            new_bias = torch.cat([self.final_logits_bias, extra_bias], dim=1)
+        self.register_buffer("final_logits_bias", new_bias)
     
     def get_output_embeddings(self) -> nn.Module:
         return self.lm_head
@@ -242,6 +275,7 @@ class SusForConditionalGeneration(SusPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
+        bag_of_words=None,
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -263,13 +297,17 @@ class SusForConditionalGeneration(SusPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            bag_of_words=bag_of_words,
         )
-        lm_logits = self.lm_head(outputs[0])
+        lm_logits = self.lm_head(outputs[0]) + self.final_logits_bias
 
         masked_lm_loss = None
         if labels is not None:
             loss_fct = nn.CrossEntropyLoss()
             masked_lm_loss = loss_fct(lm_logits.view(-1, self.config.vocab_size), labels.view(-1))
+        
+        if self.config.use_ntm and bag_of_words is not None:
+            masked_lm_loss += self.config.ntm_loss_weight * outputs[-1]
         
         if not return_dict:
             output = (lm_logits,) + outputs[1:]
@@ -297,6 +335,7 @@ class SusForConditionalGeneration(SusPreTrainedModel):
         cross_attn_head_mask=None,
         use_cache=None,
         encoder_outputs=None,
+        bag_of_words=None,
         **kwargs
     ):
         # cut decoder_input_ids if past is used
@@ -313,6 +352,7 @@ class SusForConditionalGeneration(SusPreTrainedModel):
             "decoder_head_mask": decoder_head_mask,
             "cross_attn_head_mask": cross_attn_head_mask,
             "use_cache": use_cache,
+            "bag_of_words": bag_of_words,
         }
     
     def prepare_decoder_input_ids_from_labels(self, labels: torch.Tensor):

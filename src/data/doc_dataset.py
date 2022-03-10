@@ -56,11 +56,13 @@ class DocDataset(Dataset):
     def __getitem__(self, index):
         vec = torch.zeros(self.vocab_size)
 
-        ids, vals = None, None
+        ids, vals = [], []
         if self.use_tfidf:
-            ids, vals = zip(*self.tfidf[index])
+            if len(self.tfidf[index] > 0):
+                ids, vals = zip(*self.tfidf[index])
         else:
-            ids, vals = zip(*self.bows[index])
+            if len(self.bows[index] > 0):
+                ids, vals = zip(*self.bows[index])
         
         vec[list(ids)] = torch.tensor(list(vals)).float()
         return vec
