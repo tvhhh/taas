@@ -1,5 +1,6 @@
 import argparse
 
+from test_abstractive import test
 from train_abstractive import train_abs
 from train_ntm import train_ntm
 
@@ -10,7 +11,7 @@ def str2bool(v):
     elif v.lower() in ("no", "false", "f", "n", "0"):
         return False
     else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
+        raise argparse.ArgumentTypeError("Boolean value expected")
 
 
 if __name__ == "__main__":
@@ -71,8 +72,12 @@ if __name__ == "__main__":
     parser.add_argument("-compute_metrics", type=str2bool, nargs="?", default=True)
     parser.add_argument("-evaluate_first_step", type=str2bool, nargs="?", default=False)
 
+    parser.add_argument("-test_batch_size", type=int, default=10)
+    parser.add_argument("-beam_width", type=int, default=8)
+
     parser.add_argument("-output_dir", type=str, default=None)
     parser.add_argument("-logging_dir", type=str, default=None)
+    parser.add_argument("-result_dir", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -83,7 +88,7 @@ if __name__ == "__main__":
         train_ntm(args)
 
     elif args.task == "test":
-        pass
+        test(args)
 
     else:
-        raise ValueError(f"Unknown task {args.task}.")
+        raise ValueError(f"Unknown task {args.task}")
