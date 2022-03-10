@@ -102,6 +102,9 @@ class NTMTrainer:
         
         while current_step < self.state.total_train_steps:            
             for batch in self.train_loader:
+                
+                self.model.train()
+
                 # Skip some training steps if resuming from checkpoint
                 if current_step < skipped_train_steps:
                     current_step += 1
@@ -158,6 +161,8 @@ class NTMTrainer:
         print(f"Step {self.state.train_progress}:\n" + str(metrics) + "\n")
     
     def evaluation_loop(self):
+        self.model.eval()
+
         if self.eval_progress is None:
             self.eval_progress = tqdm(range(len(self.eval_loader)))
         else:
