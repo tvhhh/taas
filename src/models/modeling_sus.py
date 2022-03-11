@@ -12,11 +12,10 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.pegasus.modeling_pegasus import (
     PegasusEncoder,
     PegasusDecoder,
-    PegasusPreTrainedModel,
     PegasusSinusoidalPositionalEmbedding,
 )
 from transformers.utils import logging
-from typing import Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from .configuration_sus import SusConfig
 from .modeling_outputs import SusModelOutput
@@ -52,6 +51,18 @@ def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start
     shifted_input_ids.masked_fill_(shifted_input_ids == -100, pad_token_id)
 
     return shifted_input_ids
+
+
+def _expand_topic_tensors_for_beam_search(topic_tensors: torch.Tensor, batch_size: int):
+    topic_bsz = topic_tensors.size(0)
+
+    if batch_size % topic_bsz != 0:
+        raise ValueError(
+            f"Could not expand topic_tensors of batch size {topic_bsz} to {batch_size}."
+        )
+    
+    output_tensors = torch.cat([topic_tensors] * int(batch_size/topic_bsz), dim=0)
+    return output_tensors
 
 
 class SusPreTrainedModel(PreTrainedModel):
@@ -340,22 +351,21 @@ class SusModel(SusPreTrainedModel):
         
         # Integrate latent topics distribution into encoder outputs
         ntm_loss = None
-        if self.config.use_ntm and bag_of_words is not None:
+        if self.config.use_ntm:
             posterior_params, word_dist, theta = self.neural_topic_model(bag_of_words)
             ntm_loss = self.neural_topic_model.loss(*posterior_params, word_dist, bag_of_words)
+
+            # Expand topic tensors to match with expanded batch in beam search
+            batch_size = input_ids.size(0)
+            if batch_size != theta.size(0):
+                theta = _expand_topic_tensors_for_beam_search(theta, batch_size)
+
             gate_vec = torch.sigmoid(
                 torch.matmul(theta, self.topic_weights).unsqueeze(1) +          # (batch_size * d_model) -> unsqueeze(1)
                 torch.matmul(encoder_outputs[0], self.hidden_state_weights) +   # (batch_size * sequence_length * d_model)
                 self.gating_bias                                                # (d_model) -> automatically use last dim
             )
-            if isinstance(encoder_outputs, BaseModelOutput):
-                encoder_outputs["last_hidden_state"] = torch.mul(gate_vec, encoder_outputs[0])
-            elif isinstance(encoder_outputs, (list, tuple)):
-                encoder_outputs[0] = torch.mul(gate_vec, encoder_outputs[0])
-            else:
-                raise TypeError(
-                    f"Undefined type {type(encoder_outputs)} of encoder_outputs"
-                )
+            encoder_outputs["last_hidden_state"] = torch.mul(gate_vec, encoder_outputs[0])
 
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
@@ -522,9 +532,8 @@ class SusForConditionalGeneration(SusPreTrainedModel):
         if labels is not None:
             loss_fct = nn.CrossEntropyLoss()
             masked_lm_loss = loss_fct(lm_logits.view(-1, self.config.vocab_size), labels.view(-1))
-        
-        if self.config.use_ntm and bag_of_words is not None:
-            masked_lm_loss += self.config.ntm_loss_weight * outputs[-1]
+            if self.config.use_ntm:
+                masked_lm_loss += self.config.ntm_loss_weight * outputs[-1]
         
         if not return_dict:
             output = (lm_logits,) + outputs[1:]
@@ -574,6 +583,35 @@ class SusForConditionalGeneration(SusPreTrainedModel):
     
     def prepare_decoder_input_ids_from_labels(self, labels: torch.Tensor):
         return shift_tokens_right(labels, self.config.pad_token_id, self.config.decoder_start_token_id)
+    
+    def _prepare_encoder_decoder_kwargs_for_generation(
+        self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        if "encoder_outputs" not in model_kwargs:
+            # 1. get encoder
+            encoder = self.get_encoder()
+            # 2. prepare encoder args and encoder kwargs from model kwargs
+            encoder_args = (inputs_tensor,)
+            irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
+            encoder_kwargs = {
+                argument: value
+                for argument, value in model_kwargs.items()
+                if not any(argument.startswith(p) for p in irrelevant_prefix)
+            }
+            # 3. make sure that encoder returns `ModelOutput`
+            encoder_kwargs["return_dict"] = True
+
+            # 4. if model_input_name is not defined then pass input_tensor as
+            # first input argument and remove from args
+            if model_input_name is not None:
+                # make sure inputs_tensor is None in case model
+                # accepts multiple model input arguments
+                encoder_kwargs[model_input_name] = inputs_tensor
+                encoder_args = ()
+
+            model_kwargs["encoder_outputs"] = encoder(*encoder_args, **encoder_kwargs)
+
+        return model_kwargs
     
     @staticmethod
     def _reorder_cache(past, beam_idx):
