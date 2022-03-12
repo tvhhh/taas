@@ -4,6 +4,7 @@ import torch
 from gensim.corpora import Dictionary
 from gensim.models import TfidfModel
 from torch.utils.data import Dataset
+from typing import List, Optional
 
 
 DEFAULT_CORPUS_PATH = "data/corpus"
@@ -13,12 +14,12 @@ DICT_FILE_NAME = "dict.txt"
 class DocDataset(Dataset):
     def __init__(
         self,
-        documents,
-        corpus_path=None,
-        dict_filter_no_below=5,
-        dict_filter_no_above=0.5,
-        max_vocab_size=100000,
-        use_tfidf=False,
+        documents: List[List[str]],
+        corpus_path: Optional[str] = None,
+        dict_filter_no_below: int = 5,
+        dict_filter_no_above: float = 0.5,
+        max_vocab_size: int = 100000,
+        use_tfidf: bool = False,
     ):
         self.documents = documents
         self.use_tfidf = use_tfidf

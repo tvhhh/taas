@@ -77,10 +77,10 @@ class DataPreprocessor:
         for s in splits:
             data_split = self.dataset[s]
             progress_bar = tqdm(range(len(data_split)))
-            corpus = list(map(
-                lambda src: self._preprocess(src, progress_bar),
-                data_split[self.args.input_name],
-            ))
+            corpus = [
+                self._preprocess(src, progress_bar) 
+                for src in data_split[self.args.input_name]
+            ]
             data_split = data_split.add_column("corpus", corpus)
             self.dataset[s] = data_split
         

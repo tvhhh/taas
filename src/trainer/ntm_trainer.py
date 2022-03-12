@@ -9,6 +9,7 @@ from gensim.models import CoherenceModel
 from models.modeling_topic import NeuralTopicModel
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from typing import List
 
 
 class TrainingState:
@@ -191,7 +192,7 @@ class NTMTrainer:
         else:
             return {"eval_loss": eval_loss}, topic_words
 
-    def compute_ntm_metrics(self, topic_words):
+    def compute_ntm_metrics(self, topic_words: List[List[str]]):
         c_v_coherence_model, c_uci_coherence_model, u_mass_coherence_model = (
             CoherenceModel(
                 topics=topic_words,
@@ -206,14 +207,14 @@ class NTMTrainer:
         u_mass = u_mass_coherence_model.get_coherence()
         return {"c_v": c_v, "c_uci": c_uci, "u_mass": u_mass}
 
-    def save_training_state(self, save_directory):
+    def save_training_state(self, save_directory: str):
         training_state_file = os.path.join(save_directory, self.TRAINING_STATE_FILE)
         def _to_json_string(state):
             return json.dumps(state, indent=2, sort_keys=True) + "\n"
         with open(training_state_file, "w") as writer:
             writer.write(_to_json_string(self.state.to_dict()))
 
-    def save_optimizer_state(self, save_directory):
+    def save_optimizer_state(self, save_directory: str):
         optimizer_state_file = os.path.join(save_directory, self.OPTIMIZER_STATE_FILE)
         torch.save(self.optimizer.state_dict(), optimizer_state_file)
     

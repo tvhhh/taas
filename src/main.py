@@ -5,7 +5,7 @@ from train_abstractive import train_abs
 from train_ntm import train_ntm
 
 
-def str2bool(v):
+def str2bool(v: str):
     if v.lower() in ("yes", "true", "t", "y", "1"):
         return True
     elif v.lower() in ("no", "false", "f", "n", "0"):
@@ -74,6 +74,7 @@ if __name__ == "__main__":
 
     parser.add_argument("-test_batch_size", type=int, default=10)
     parser.add_argument("-beam_width", type=int, default=8)
+    parser.add_argument("-output_precision_recall", type=str2bool, nargs="?", default=False)
 
     parser.add_argument("-output_dir", type=str, default=None)
     parser.add_argument("-logging_dir", type=str, default=None)

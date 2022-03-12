@@ -3,6 +3,8 @@ import numpy as np
 import os
 
 from datasets import load_dataset, load_from_disk, load_metric
+from datasets.arrow_dataset import Dataset
+from datasets.metric import Metric
 from gensim.corpora import Dictionary
 from models.configuration_sus import SusConfig
 from models.modeling_sus import SusForConditionalGeneration
@@ -10,16 +12,18 @@ from trainer.hf_trainer import HFTrainer
 from transformers.data.data_collator import DataCollatorForSeq2Seq
 from transformers.models.pegasus.tokenization_pegasus import PegasusTokenizer
 from transformers.training_args import TrainingArguments
+from transformers.trainer_utils import EvalPrediction
+from typing import Optional
 
 
 def _prepare_data(
-    dataset,
-    tokenizer,
-    input_name,
-    label_name,
-    max_input_length=1024,
-    max_target_length=128,
-    dictionary=None,
+    dataset: Dataset,
+    tokenizer: PegasusTokenizer,
+    input_name: str,
+    label_name: str,
+    max_input_length: int = 1024,
+    max_target_length: int = 128,
+    dictionary: Optional[Dictionary] = None,
 ):
     def _process_data(examples):
         model_inputs = tokenizer(
@@ -53,7 +57,7 @@ def _prepare_data(
     return dataset.map(_process_data, batched=True)
 
 
-def _compute_metrics(p, tokenizer, rouge):
+def _compute_metrics(p: EvalPrediction, tokenizer: PegasusTokenizer, rouge: Metric):
     (predictions, _), labels = p
     
     predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
@@ -65,10 +69,10 @@ def _compute_metrics(p, tokenizer, rouge):
     decoded_preds = ["\n".join(nltk.sent_tokenize(pred)) for pred in decoded_preds]
     decoded_labels = ["\n".join(nltk.sent_tokenize(label)) for label in decoded_labels]
 
-    rouge_results = rouge.compute(predictions=decoded_preds, references=decoded_labels)
-    results = {key: value.mid.fmeasure * 100 for key, value in rouge_results.items()}
+    rouge_scores = rouge.compute(predictions=decoded_preds, references=decoded_labels)
+    result = {key: value.mid.fmeasure * 100 for key, value in rouge_scores.items()}
 
-    return results
+    return result
 
 
 def train_abs(args):
