@@ -29,7 +29,7 @@ def _prepare_data(
         model_inputs = tokenizer(
             examples[input_name],
             max_length=max_input_length,
-            truncation=True
+            truncation=True,
         )
 
         with tokenizer.as_target_tokenizer():
@@ -41,10 +41,7 @@ def _prepare_data(
         model_inputs["labels"] = labels["input_ids"]
 
         if dictionary is not None:
-            gensim_bows = [
-                dictionary.doc2bow(doc.split())
-                for doc in examples["corpus"]
-            ]
+            gensim_bows = [dictionary.doc2bow(doc.split()) for doc in examples["corpus"]]
             bows = np.zeros((len(examples["corpus"]), len(dictionary.token2id)))
             for i, bow in enumerate(gensim_bows):
                 if len(bow) > 0:

@@ -353,10 +353,13 @@ class SusModel(SusPreTrainedModel):
         ntm_loss = None
         if self.config.use_ntm:
             posterior_params, word_dist, theta = self.neural_topic_model(bag_of_words)
-            ntm_loss = self.neural_topic_model.loss(*posterior_params, word_dist, bag_of_words)
+
+            # Only compute loss when model in training mode
+            if self.training:
+                ntm_loss = self.neural_topic_model.loss(*posterior_params, word_dist, bag_of_words)
 
             # Expand topic tensors to match with expanded batch in beam search
-            batch_size = input_ids.size(0)
+            batch_size = encoder_outputs[0].size(0)
             if batch_size != theta.size(0):
                 theta = _expand_topic_tensors_for_beam_search(theta, batch_size)
 

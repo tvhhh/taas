@@ -1,6 +1,6 @@
 import argparse
 
-from test_abstractive import test
+from test import test
 from train_abstractive import train_abs
 from train_ntm import train_ntm
 
