@@ -29,6 +29,7 @@ if __name__ == "__main__":
     parser.add_argument("-pretrained_tokenizer_path", type=str, default=None)
     
     parser.add_argument("-pretrained_model_path", type=str, default=None)
+    parser.add_argument("-freeze_embeddings", type=str2bool, default=False)
     parser.add_argument("-freeze_encoder_layers", type=int, default=None)
     
     parser.add_argument("-use_ntm", type=str2bool, nargs="?", default=True)

@@ -117,10 +117,13 @@ def train_abs(args):
     if args.pretrained_ntm_path is not None:
         sus.load_pretrained_ntm(args.pretrained_ntm_path)
     
-    # Freeze encoder layers
-    if args.freeze_encoder_layers is not None:
+    # Freeze embeddings
+    if args.freeze_embeddings:
         for param in sus.get_encoder().embed_tokens.parameters():
             param.requires_grad = False
+    
+    # Freeze encoder layers
+    if args.freeze_encoder_layers is not None:
         for i in range(args.freeze_encoder_layers):
             for param in sus.get_encoder().layers[i].parameters():
                 param.requires_grad = False
