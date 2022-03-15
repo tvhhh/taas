@@ -41,7 +41,7 @@ class DocDataset(Dataset):
             self.dictionary.save_as_text(os.path.join(corpus_path, DICT_FILE_NAME))
         
         else:
-            self.dictionary = Dictionary.load_from_text(corpus_path)
+            self.dictionary = Dictionary.load_from_text(os.path.join(corpus_path, DICT_FILE_NAME))
             self.dictionary.id2token = {v: k for k, v in self.dictionary.token2id.items()}
         
         self.bows = [self.dictionary.doc2bow(doc) for doc in self.documents]
@@ -59,10 +59,10 @@ class DocDataset(Dataset):
 
         ids, vals = [], []
         if self.use_tfidf:
-            if len(self.tfidf[index] > 0):
+            if len(self.tfidf[index]) > 0:
                 ids, vals = zip(*self.tfidf[index])
         else:
-            if len(self.bows[index] > 0):
+            if len(self.bows[index]) > 0:
                 ids, vals = zip(*self.bows[index])
         
         vec[list(ids)] = torch.tensor(list(vals)).float()
