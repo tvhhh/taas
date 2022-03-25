@@ -192,14 +192,32 @@ def _save_result_to_file(output_dir: str, result: Dict[str, float]):
 def _test(
     args: Namespace,
     checkpoint_dir: str,
-    test_set: Dataset,
-    test_loader: DataLoader,
-    tokenizer: PegasusTokenizer,
+    dataset: Dataset,
+    dictionary: Optional[Dictionary] = None,
 ):
     re_checkpoint = re.compile(r"^" + CHECKPOINT_PREFIX + r"\-(\d+)$")
     checkpoint_name = re_checkpoint.search(checkpoint_dir).groups()[0]
 
+    tokenizer = PegasusTokenizer.from_pretrained(checkpoint_dir)
     sus = SusForConditionalGeneration.from_pretrained(checkpoint_dir)
+
+    test_set = _prepare_data(
+        dataset["test"],
+        tokenizer,
+        args.data_input_name,
+        args.data_label_name,
+        args.max_input_length,
+        args.max_target_length,
+        dictionary,
+    )
+    test_set.set_format(
+        type="torch",
+        columns=(
+            ["attention_mask","input_ids"] + 
+            (["bag_of_words"] if dictionary else [])
+        )
+    )
+    test_loader = DataLoader(test_set, batch_size=args.test_batch_size)
 
     predictions = _generate(
         test_loader,
@@ -226,6 +244,21 @@ def _test(
     return rouge_scores
 
 
+def _nested_collect(obj, new_obj):
+    if isinstance(obj, dict) and isinstance(new_obj, dict):
+        return {
+            k: _nested_collect((obj[k] if k in obj else None), v)
+            for k, v in new_obj.items()
+        }
+    elif obj is None:
+        return {
+            k: _nested_collect(obj, v)
+            for k, v in new_obj.items()
+        } if isinstance(new_obj, dict) else [new_obj]
+    else:
+        return obj + [new_obj]
+
+
 def test(args: Namespace):
     
     nltk.download("punkt")
@@ -236,47 +269,23 @@ def test(args: Namespace):
         dataset = load_from_disk(args.dataset_path)
     else:
         dataset = load_dataset(args.dataset_path, args.dataset_name)
-    
-    # Load pretrained tokenizer for PEGASUS
-    tokenizer = PegasusTokenizer.from_pretrained(args.pretrained_tokenizer_path)
 
     # Use gensim dictionary if use neural topic model
     dictionary = None
     if args.use_ntm:
         dictionary = Dictionary.load_from_text(os.path.join(args.ntm_corpus_path, "dict.txt"))
-    
-    test_set = _prepare_data(
-        dataset["test"],
-        tokenizer,
-        args.data_input_name,
-        args.data_label_name,
-        args.max_input_length,
-        args.max_target_length,
-        dictionary,
-    )
-    test_set.set_format(
-        type="torch",
-        columns=(
-            ["attention_mask","input_ids"] + 
-            (["bag_of_words"] if dictionary else [])
-        )
-    )
-    test_loader = DataLoader(test_set, batch_size=args.test_batch_size)
 
     
     best_checkpoints = None
     if not args.test_best_checkpoints:
-        best_checkpoints = (args.pretrained_model_path)
+        best_checkpoints = (args.pretrained_model_path,)
     else:
         best_checkpoints = _get_best_checkpoints(args.output_dir, args.test_num_checkpoints)
     
     result_collector = {}
     for checkpoint in best_checkpoints:
-        result = _test(args, checkpoint, test_set, test_loader, tokenizer)
-        result_collector = {
-            k: (result_collector[k] if k in result_collector else []) + [v] 
-            for k, v in result.items()
-        }
+        result = _test(args, checkpoint, dataset, dictionary)
+        result_collector = _nested_collect(result_collector, result)
     
     overall_result = {
         k: np.mean(v) for k, v in result_collector.items()
