@@ -2,8 +2,10 @@ import json
 import nltk
 import numpy as np
 import os
+import re
 import torch
 
+from argparse import Namespace
 from datasets import load_dataset, load_from_disk
 from datasets.arrow_dataset import Dataset
 from gensim.corpora import Dictionary
@@ -15,8 +17,45 @@ from transformers.models.pegasus.tokenization_pegasus import PegasusTokenizer
 from typing import Any, Dict, List, Optional
 
 
-OUTPUTS_FILE = "summaries.txt"
+CHECKPOINT_PREFIX = "checkpoint"
+METRIC_PREFIX = "eval"
+
+OUTPUTS_FILE = "outputs.txt"
 RESULTS_FILE = "results.json"
+TRAINER_STATE_FILE = "trainer_state.json"
+
+
+def _get_last_checkpoint(output_dir):
+    re_checkpoint = re.compile(r"^" + CHECKPOINT_PREFIX + r"\-(\d+)$")
+    contents = [
+        path for path in os.listdir(output_dir)
+        if re_checkpoint.search(path) is not None
+        and os.path.isdir(os.path.join(output_dir, path))
+    ]
+    return os.path.join(output_dir, max(contents, key=lambda x: int(re_checkpoint.search(x).groups()[0])))
+
+
+def _get_best_checkpoints(output_dir, num_checkpoints=1, metric="loss", greater_is_better=False):
+    last_checkpoint = _get_last_checkpoint(output_dir)
+    
+    with open(os.path.join(last_checkpoint, TRAINER_STATE_FILE), "r") as reader:
+        trainer_state = json.load(reader)
+    
+    metric_history = trainer_state["log_history"][1::2]
+    metrics = np.array([x[f"{METRIC_PREFIX}_{metric}"] for x in metric_history])
+
+    sorted_ids = np.argsort(metrics)
+    if greater_is_better:
+        sorted_ids = sorted_ids[::-1]
+    
+    best_ids = sorted_ids[:num_checkpoints]
+
+    return tuple(
+        os.path.join(
+            output_dir, 
+            f"{CHECKPOINT_PREFIX}-{metric_history[i]['step']}"
+        ) for i in best_ids
+    )
 
 
 def _prepare_data(
@@ -150,7 +189,44 @@ def _save_result_to_file(output_dir: str, result: Dict[str, float]):
         writer.write(json.dumps(result, indent=2) + "\n")
 
 
-def test(args):
+def _test(
+    args: Namespace,
+    checkpoint_dir: str,
+    test_set: Dataset,
+    test_loader: DataLoader,
+    tokenizer: PegasusTokenizer,
+):
+    re_checkpoint = re.compile(r"^" + CHECKPOINT_PREFIX + r"\-(\d+)$")
+    checkpoint_name = re_checkpoint.search(checkpoint_dir).groups()[0]
+
+    sus = SusForConditionalGeneration.from_pretrained(checkpoint_dir)
+
+    predictions = _generate(
+        test_loader,
+        sus,
+        args.beam_width,
+        args.max_target_length,
+        tokenizer,
+    )
+    _save_output_to_file(
+        f"{args.result_dir}-{checkpoint_name}",
+        test_set,
+        args.data_input_name,
+        args.data_label_name,
+        predictions,
+    )
+
+    rouge_scores = _cal_rouge_scores(
+        predictions,
+        test_set[args.data_label_name],
+        return_precision_and_recall=args.output_precision_recall
+    )
+    _save_result_to_file(f"{args.result_dir}-{checkpoint_name}", rouge_scores)
+
+    return rouge_scores
+
+
+def test(args: Namespace):
     
     nltk.download("punkt")
 
@@ -169,8 +245,6 @@ def test(args):
     if args.use_ntm:
         dictionary = Dictionary.load_from_text(os.path.join(args.ntm_corpus_path, "dict.txt"))
     
-    sus = SusForConditionalGeneration.from_pretrained(args.pretrained_model_path)
-
     test_set = _prepare_data(
         dataset["test"],
         tokenizer,
@@ -189,24 +263,22 @@ def test(args):
     )
     test_loader = DataLoader(test_set, batch_size=args.test_batch_size)
 
-    predictions = _generate(
-        test_loader,
-        sus,
-        args.beam_width,
-        args.max_target_length,
-        tokenizer,
-    )
-    _save_output_to_file(
-        args.result_dir,
-        test_set,
-        args.data_input_name,
-        args.data_label_name,
-        predictions,
-    )
-
-    rouge_scores = _cal_rouge_scores(
-        predictions,
-        test_set[args.data_label_name],
-        return_precision_and_recall=args.output_precision_recall
-    )
-    _save_result_to_file(args.result_dir, rouge_scores)
+    
+    best_checkpoints = None
+    if not args.test_best_checkpoints:
+        best_checkpoints = (args.pretrained_model_path)
+    else:
+        best_checkpoints = _get_best_checkpoints(args.output_dir, args.test_num_checkpoints)
+    
+    result_collector = {}
+    for checkpoint in best_checkpoints:
+        result = _test(args, checkpoint, test_set, test_loader, tokenizer)
+        result_collector = {
+            k: (result_collector[k] if k in result_collector else []) + [v] 
+            for k, v in result.items()
+        }
+    
+    overall_result = {
+        k: np.mean(v) for k, v in result_collector.items()
+    }
+    _save_result_to_file(args.result_dir, overall_result)

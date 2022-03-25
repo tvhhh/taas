@@ -1,10 +1,11 @@
+from argparse import Namespace
 from data.doc_dataset import DocDataset
 from datasets import load_dataset, load_from_disk
 from models.modeling_topic import NeuralTopicModel
 from trainer.ntm_trainer import NTMTrainer
 
 
-def train_ntm(args):
+def train_ntm(args: Namespace):
     
     # Load preprocessed dataset
     dataset = None

@@ -2,6 +2,7 @@ import nltk
 import numpy as np
 import os
 
+from argparse import Namespace
 from datasets import load_dataset, load_from_disk, load_metric
 from datasets.arrow_dataset import Dataset
 from datasets.metric import Metric
@@ -72,7 +73,7 @@ def _compute_metrics(p: EvalPrediction, tokenizer: PegasusTokenizer, rouge: Metr
     return result
 
 
-def train_abs(args):
+def train_abs(args: Namespace):
 
     nltk.download("punkt")
 
@@ -174,9 +175,6 @@ def train_abs(args):
         save_strategy=args.save_checkpoint_strategy,
         save_steps=args.save_checkpoint_steps,
         eval_steps=args.eval_steps,
-        load_best_model_at_end=args.load_best_at_end,
-        metric_for_best_model=args.metric_load_best,
-        greater_is_better=args.greater_better,
     )
     trainer = HFTrainer(
         model=sus,

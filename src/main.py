@@ -73,6 +73,10 @@ if __name__ == "__main__":
     parser.add_argument("-compute_metrics", type=str2bool, nargs="?", default=True)
     parser.add_argument("-evaluate_first_step", type=str2bool, nargs="?", default=False)
 
+    parser.add_argument("-test_best_checkpoints", type=str2bool, nargs="?", default=True)
+    parser.add_argument("-test_num_checkpoints", type=int, default=1)
+    parser.add_argument("-metric_load_best", type=str, default="loss")
+    parser.add_argument("-metric_greater_is_better", type=str2bool, nargs="?", default=False)
     parser.add_argument("-test_batch_size", type=int, default=10)
     parser.add_argument("-beam_width", type=int, default=8)
     parser.add_argument("-output_precision_recall", type=str2bool, nargs="?", default=False)
