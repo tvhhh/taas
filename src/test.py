@@ -259,6 +259,15 @@ def _nested_collect(obj, new_obj):
         return obj + [new_obj]
 
 
+def _nested_compute(obj):
+    if isinstance(obj, dict):
+        return {k: _nested_compute(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return np.mean(obj)
+    else:
+        raise ValueError(f"Unsupported type {type(obj)}")
+
+
 def test(args: Namespace):
     
     nltk.download("punkt")
@@ -287,7 +296,5 @@ def test(args: Namespace):
         result = _test(args, checkpoint, dataset, dictionary)
         result_collector = _nested_collect(result_collector, result)
     
-    overall_result = {
-        k: np.mean(v) for k, v in result_collector.items()
-    }
+    overall_result = _nested_compute(result_collector)
     _save_result_to_file(args.result_dir, overall_result)
