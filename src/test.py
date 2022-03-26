@@ -196,7 +196,7 @@ def _test(
     dictionary: Optional[Dictionary] = None,
 ):
     re_checkpoint = re.compile(r"^" + CHECKPOINT_PREFIX + r"\-(\d+)$")
-    checkpoint_name = re_checkpoint.search(checkpoint_dir).groups()[0]
+    checkpoint_name = re_checkpoint.search(os.path.basename(checkpoint_dir)).groups()[0]
 
     tokenizer = PegasusTokenizer.from_pretrained(checkpoint_dir)
     sus = SusForConditionalGeneration.from_pretrained(checkpoint_dir)
@@ -283,13 +283,17 @@ def test(args: Namespace):
     dictionary = None
     if args.use_ntm:
         dictionary = Dictionary.load_from_text(os.path.join(args.ntm_corpus_path, "dict.txt"))
-
-    
+   
     best_checkpoints = None
     if not args.test_best_checkpoints:
         best_checkpoints = (args.pretrained_model_path,)
     else:
-        best_checkpoints = _get_best_checkpoints(args.output_dir, args.test_num_checkpoints)
+        best_checkpoints = _get_best_checkpoints(
+            args.output_dir,
+            args.test_num_checkpoints,
+            args.metric_load_best,
+            args.metric_greater_is_better,
+        )
     
     result_collector = {}
     for checkpoint in best_checkpoints:
