@@ -19,6 +19,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("-task", type=str, choices=["ntm", "abs", "test"], default="abs")
+    parser.add_argument("-ntm", type=str, choices=["gsm", "batm"], default="gsm")
 
     parser.add_argument("-load_data_from_disk", type=str2bool, nargs="?", default=False)
     parser.add_argument("-dataset_path", type=str, default="cnn_dailymail")
@@ -32,15 +33,14 @@ if __name__ == "__main__":
     parser.add_argument("-freeze_embeddings", type=str2bool, default=False)
     parser.add_argument("-freeze_encoder_layers", type=int, default=None)
     
-    parser.add_argument("-use_ntm", type=str2bool, nargs="?", default=True)
-    parser.add_argument("-ntm_loss_weight", type=float, default=0.1)
+    parser.add_argument("-use_ntm", type=str, choices=["gsm", "batm"], default=None)
     parser.add_argument("-pretrained_ntm_path", type=str, default=None)
     parser.add_argument("-ntm_corpus_path", type=str, default=None)
     parser.add_argument("-ntm_dict_filter_no_below", type=int, default=2)
     parser.add_argument("-ntm_dict_filter_no_above", type=float, default=0.5)
-    parser.add_argument("-ntm_max_vocab_size", type=int, default=100000)
+    
+    parser.add_argument("-ntm_max_vocab_size", type=int, default=20000)
     parser.add_argument("-ntm_num_topics", type=int, default=100)
-    parser.add_argument("-ntm_activation", type=str, choices=["softplus", "relu"], default="softplus")
     parser.add_argument("-ntm_dropout", type=float, default=0.0)
     parser.add_argument("-ntm_use_tfidf", type=str2bool, nargs="?", default=False)
 
@@ -80,7 +80,7 @@ if __name__ == "__main__":
     parser.add_argument("-test_batch_size", type=int, default=10)
     parser.add_argument("-beam_width", type=int, default=8)
     parser.add_argument("-output_precision_recall", type=str2bool, nargs="?", default=False)
-
+    
     parser.add_argument("-output_dir", type=str, default=None)
     parser.add_argument("-logging_dir", type=str, default=None)
     parser.add_argument("-result_dir", type=str, default=None)

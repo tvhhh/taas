@@ -7,7 +7,7 @@ from transformers.file_utils import (
     add_start_docstrings_to_model_forward,
     replace_return_docstrings,
 )
-from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
+from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput, Seq2SeqModelOutput
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.pegasus.modeling_pegasus import (
     PegasusEncoder,
@@ -18,8 +18,8 @@ from transformers.utils import logging
 from typing import Any, Dict, Optional, Tuple
 
 from .configuration_sus import SusConfig
-from .modeling_outputs import SusModelOutput
-from .modeling_topic import NeuralTopicModel
+from .modeling_topic.batm import BATM
+from .modeling_topic.gsm import GSM
 
 
 logger = logging.get_logger(__name__)
@@ -228,10 +228,15 @@ class SusModel(SusPreTrainedModel):
         self.decoder = PegasusDecoder(config, self.shared)
 
         self.neural_topic_model = None
-        if config.use_ntm:
-            ntm_config = config.to_ntm_config()
-            self.neural_topic_model = NeuralTopicModel(**ntm_config)
-            self.topic_weights = nn.Parameter(torch.empty((config.n_topics, config.d_model)))
+        if config.use_ntm is not None:
+            if config.use_ntm == "gsm":
+                self.neural_topic_model = GSM(**config.ntm_config)
+            elif config.use_ntm == "batm":
+                self.neural_topic_model = BATM(**config.ntm_config)
+            else:
+                raise ValueError(f"Unknown NTM {config.use_ntm}")
+            
+            self.topic_weights = nn.Parameter(torch.empty((config.ntm_config["n_topics"], config.d_model)))
             self.hidden_state_weights = nn.Parameter(torch.empty((config.d_model, config.d_model)))
             self.gating_bias = nn.Parameter(torch.zeros(config.d_model))
             nn.init.xavier_normal_(self.topic_weights)
@@ -243,6 +248,7 @@ class SusModel(SusPreTrainedModel):
     def load_pretrained_ntm(self, pretrained_ntm_path: str):
         if self.neural_topic_model is not None:
             self.neural_topic_model.load_weights_from_pretrained(pretrained_ntm_path)
+            self.config.ntm_config = self.neural_topic_model.config
         else:
             raise AttributeError(
                 f"Neural topic model was not used in this model\n"
@@ -286,7 +292,7 @@ class SusModel(SusPreTrainedModel):
         return (self.encoder.get_position_embeddings(), self.decoder.get_position_embeddings())
     
     @add_start_docstrings_to_model_forward(PEGASUS_INPUTS_DOCSTRING)
-    @replace_return_docstrings(output_type=SusModelOutput, config_class=_CONFIG_FOR_DOC)
+    @replace_return_docstrings(output_type=Seq2SeqModelOutput, config_class=_CONFIG_FOR_DOC)
     def forward(
         self,
         input_ids=None,
@@ -350,11 +356,8 @@ class SusModel(SusPreTrainedModel):
             )
         
         # Integrate latent topics distribution into encoder outputs
-        ntm_loss = None
-        if self.config.use_ntm:
-            posterior_params, word_dist, theta = self.neural_topic_model(bag_of_words)
-
-            ntm_loss = self.neural_topic_model.loss(*posterior_params, word_dist, bag_of_words)
+        if self.config.use_ntm is not None:
+            _, theta = self.neural_topic_model(bag_of_words)
 
             # Expand topic tensors to match with expanded batch in beam search
             batch_size = encoder_outputs[0].size(0)
@@ -385,10 +388,9 @@ class SusModel(SusPreTrainedModel):
         )
 
         if not return_dict:
-            outputs = decoder_outputs + encoder_outputs
-            return outputs + (ntm_loss,) if self.config.use_ntm else outputs
+            return decoder_outputs + encoder_outputs
 
-        return SusModelOutput(
+        return Seq2SeqModelOutput(
             last_hidden_state=decoder_outputs.last_hidden_state,
             past_key_values=decoder_outputs.past_key_values,
             decoder_hidden_states=decoder_outputs.hidden_states,
@@ -397,7 +399,6 @@ class SusModel(SusPreTrainedModel):
             encoder_last_hidden_state=encoder_outputs.last_hidden_state,
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
-            topic_model_loss=ntm_loss,
         )
 
 
@@ -533,8 +534,6 @@ class SusForConditionalGeneration(SusPreTrainedModel):
         if labels is not None:
             loss_fct = nn.CrossEntropyLoss()
             masked_lm_loss = loss_fct(lm_logits.view(-1, self.config.vocab_size), labels.view(-1))
-            if self.config.use_ntm:
-                masked_lm_loss += self.config.ntm_loss_weight * outputs[-1]
         
         if not return_dict:
             output = (lm_logits,) + outputs[1:]

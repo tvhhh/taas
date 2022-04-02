@@ -89,29 +89,30 @@ def train_abs(args: Namespace):
 
     # Use gensim dictionary if use neural topic model
     dictionary = None
-    if args.use_ntm:
+    if args.use_ntm is not None:
         dictionary = Dictionary.load_from_text(os.path.join(args.ntm_corpus_path, "dict.txt"))
 
-    # Load or initialize model
+    # Prepare neural topic model configuration
+    ntm_config = {}
+    if args.use_ntm is not None:
+        ntm_config = {
+            "vocab_size":len(dictionary.token2id) if dictionary else 20000,
+            "n_topics": args.ntm_num_topics,
+            "dropout": args.ntm_dropout,
+        }
+
+    # Load or initialize model    
     sus = None
     if args.pretrained_model_path is not None:
         sus = SusForConditionalGeneration.from_pretrained(
             args.pretrained_model_path,
             use_ntm=args.use_ntm,
-            corpus_size=(len(dictionary.token2id) if dictionary else 20000),
-            n_topics=args.ntm_num_topics,
-            ntm_activation=args.ntm_activation,
-            ntm_dropout=args.ntm_dropout,
-            ntm_loss_weight=args.ntm_loss_weight,
+            ntm_config=ntm_config,
         )
     else:
         config = SusConfig(
             use_ntm=args.use_ntm,
-            corpus_size=(len(dictionary.token2id) if dictionary else 20000),
-            n_topics=args.ntm_num_topics,
-            ntm_activation=args.ntm_activation,
-            ntm_dropout=args.ntm_dropout,
-            ntm_loss_weight=args.ntm_loss_weight,
+            ntm_config=ntm_config,
         )
         sus = SusForConditionalGeneration(config)
     

@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .utils import NeuralTopicModel
+
 
 class InferenceNetwork(nn.Module):
     def __init__(
@@ -11,16 +13,11 @@ class InferenceNetwork(nn.Module):
         vocab_size,
         n_topics,
         hidden_sizes,
-        activation="softplus",
         dropout=0.0,
     ):
         super().__init__()
 
-        if activation == "softplus":
-            self.activation = nn.Softplus()
-        elif activation == "relu":
-            self.activation = nn.ReLU()
-        
+        self.activation = nn.ReLU()
         self.dropout = nn.Dropout(dropout)
         
         self.encoder = nn.Sequential(*(
@@ -62,17 +59,13 @@ class GeneratorNetwork(nn.Module):
         return self.batchnorm_generator(torch.matmul(z, self.topic_word_dist))
 
 
-class NeuralTopicModel(nn.Module):
-    
-    CONFIG_FILE = "config.json"
-    MODEL_STATE_FILE = "model_state.pt"
+class GSM(NeuralTopicModel):
 
     def __init__(
         self,
-        vocab_size=100000,
+        vocab_size=20000,
         n_topics=100,
         hidden_sizes=(1024,512,256),
-        activation="softplus",
         dropout=0.0,
         prior_params=None,
     ):
@@ -81,7 +74,6 @@ class NeuralTopicModel(nn.Module):
         assert isinstance(vocab_size, int), f"vocab_size must be integer, got {type(vocab_size)}."
         assert isinstance(n_topics, int), f"n_topics must be integer, got {type(n_topics)}."
         assert isinstance(hidden_sizes, (list, tuple)), f"hidden_sizes must be list or tuple, got {type(hidden_sizes)}."
-        assert activation in ("softplus", "relu"), f"activation must be softplus or relu, got {activation}."
         assert dropout >= 0, f"dropout must be non-negative, got {dropout}."
 
         # Use standard Gaussian distribution if prior is not given
@@ -95,7 +87,6 @@ class NeuralTopicModel(nn.Module):
             "vocab_size": vocab_size,
             "n_topics": n_topics,
             "hidden_sizes": hidden_sizes,
-            "activation": activation,
             "dropout": dropout,
             "prior_params": prior_params,
         }
@@ -104,7 +95,7 @@ class NeuralTopicModel(nn.Module):
         self.register_buffer("prior_mean", torch.tensor([p_mean] * n_topics))
         self.register_buffer("prior_variance", torch.tensor([p_variance] * n_topics))
 
-        self.inference_network = InferenceNetwork(vocab_size, n_topics, hidden_sizes, activation, dropout)
+        self.inference_network = InferenceNetwork(vocab_size, n_topics, hidden_sizes, dropout)
         self.generator_network = GeneratorNetwork(vocab_size, n_topics)
 
     def reparameterize(self, mu, logvar):
@@ -124,7 +115,7 @@ class NeuralTopicModel(nn.Module):
         word_dist = F.softmax(x_recons, dim=1)
 
         # Return posterior distribution parameters, latent topics distribution, reconstructed words distribution
-        return (posterior_mean, posterior_var), word_dist, theta
+        return (posterior_mean, posterior_var, word_dist, x), theta
     
     def loss(self, posterior_mean, posterior_var, word_dist, inputs):
         # KL divergence: KL(q(x|z) || P(z))

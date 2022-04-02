@@ -1,8 +1,9 @@
 from argparse import Namespace
 from data.doc_dataset import DocDataset
 from datasets import load_dataset, load_from_disk
-from models.modeling_topic import NeuralTopicModel
-from trainer.ntm_trainer import NTMTrainer
+from models.modeling_topic.batm import BATM
+from models.modeling_topic.gsm import GSM
+from trainer.ntm_trainer import BATMTrainer, NTMTrainer
 
 
 def train_ntm(args: Namespace):
@@ -26,22 +27,38 @@ def train_ntm(args: Namespace):
         ) for s in ("train", "validation")
     )
 
+    ntm_class = None
+    if args.ntm == "gsm":
+        ntm_class = GSM
+    elif args.ntm == "batm":
+        ntm_class = BATM
+    else:
+        raise ValueError(f"Unknown NTM {args.ntm}")
+
     # Load or initialize neural topic model
     ntm = None
     if args.pretrained_ntm_path:
-        ntm = NeuralTopicModel.from_pretrained(args.pretrained_ntm_path)
+        ntm = ntm_class.from_pretrained(args.pretrained_ntm_path)
     else:
-        ntm = NeuralTopicModel(
+        ntm = ntm_class(
             vocab_size=train_set.vocab_size,
             n_topics=args.ntm_num_topics,
-            activation=args.ntm_activation,
             dropout=args.ntm_dropout,
         )
 
-    trainer = NTMTrainer(
-        model=ntm,
-        args=args,
-        train_set=train_set,
-        eval_set=eval_set,
-    )
+    if args.ntm == "batm":
+        trainer = BATMTrainer(
+            model=ntm,
+            args=args,
+            train_set=train_set,
+            eval_set=eval_set,
+        )
+    else:
+        trainer = NTMTrainer(
+            model=ntm,
+            args=args,
+            train_set=train_set,
+            eval_set=eval_set,
+        )
+    
     trainer.train()
