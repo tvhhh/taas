@@ -41,6 +41,11 @@ class NTMTrainer:
         train_set: DocDataset,
         eval_set: DocDataset,
     ):
+        os.makedirs(args.output_dir, exist_ok=True)
+        os.makedirs(args.logging_dir, exist_ok=True)
+        self.output_dir = args.output_dir
+        self.logging_dir = args.logging_dir
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         
@@ -54,12 +59,12 @@ class NTMTrainer:
             last_checkpoint = self.get_last_checkpoint()
             self.model.load_weights_from_pretrained(last_checkpoint)
 
-            trainer_state_file = os.path.join(args.output_dir, self.TRAINER_STATE_FILE)
+            trainer_state_file = os.path.join(last_checkpoint, self.TRAINER_STATE_FILE)
             with open(trainer_state_file, "r") as reader:
                 trainer_state = json.load(reader)
             self.state = TrainerState(**trainer_state)
 
-            optimizer_state_file = os.path.join(args.output_dir, self.OPTIMIZER_STATE_FILE)
+            optimizer_state_file = os.path.join(last_checkpoint, self.OPTIMIZER_STATE_FILE)
             optimizer_state_dict = torch.load(optimizer_state_file)
             self.optimizer = torch.optim.Adam(self.model.parameters())
             self.optimizer.load_state_dict(optimizer_state_dict)
@@ -90,11 +95,6 @@ class NTMTrainer:
             )
 
         self.compute_metrics = args.compute_metrics
-
-        os.makedirs(args.output_dir, exist_ok=True)
-        os.makedirs(args.logging_dir, exist_ok=True)
-        self.output_dir = args.output_dir
-        self.logging_dir = args.logging_dir
 
         self.train_progress, self.eval_progress = None, None
         self.logger = None
@@ -268,6 +268,11 @@ class BATMTrainer:
         clip=0.01,
         n_critic=5,
     ):
+        os.makedirs(args.output_dir, exist_ok=True)
+        os.makedirs(args.logging_dir, exist_ok=True)
+        self.output_dir = args.output_dir
+        self.logging_dir = args.logging_dir
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = model.to(self.device)
         
@@ -281,12 +286,12 @@ class BATMTrainer:
             last_checkpoint = self.get_last_checkpoint()
             self.model.load_weights_from_pretrained(last_checkpoint)
 
-            trainer_state_file = os.path.join(args.output_dir, self.TRAINER_STATE_FILE)
+            trainer_state_file = os.path.join(last_checkpoint, self.TRAINER_STATE_FILE)
             with open(trainer_state_file, "r") as reader:
                 trainer_state = json.load(reader)
             self.state = BATMTrainerState(**trainer_state)
 
-            optimizer_state_file = os.path.join(args.output_dir, self.OPTIMIZER_STATE_FILE)
+            optimizer_state_file = os.path.join(last_checkpoint, self.OPTIMIZER_STATE_FILE)
             self.load_optimizer_state(optimizer_state_file)
         
         else:
@@ -331,11 +336,6 @@ class BATMTrainer:
             )
 
         self.compute_metrics = args.compute_metrics
-
-        os.makedirs(args.output_dir, exist_ok=True)
-        os.makedirs(args.logging_dir, exist_ok=True)
-        self.output_dir = args.output_dir
-        self.logging_dir = args.logging_dir
 
         self.train_progress, self.eval_progress = None, None
         self.logger = None
