@@ -215,10 +215,10 @@ class NTMTrainer:
         return {"c_v": c_v, "c_uci": c_uci, "u_mass": u_mass}
 
     def save_trainer_state(self, save_directory: str):
-        training_state_file = os.path.join(save_directory, self.TRAINER_STATE_FILE)
+        trainer_state_file = os.path.join(save_directory, self.TRAINER_STATE_FILE)
         def _to_json_string(state):
             return json.dumps(state, indent=2, sort_keys=True) + "\n"
-        with open(training_state_file, "w") as writer:
+        with open(trainer_state_file, "w") as writer:
             writer.write(_to_json_string(self.state.to_dict()))
 
     def save_optimizer_state(self, save_directory: str):
@@ -371,7 +371,7 @@ class BATMTrainer:
                 loss_params, _ = self.model(bow)
                 loss_discriminator = self.model.loss(*loss_params)
                 self.state.train_loss_discriminator = (
-                    (self.state.train_loss_discriminator * (current_step - 1) + loss_discriminator) / current_step
+                    (self.state.train_loss_discriminator * (current_step - 1) + loss_discriminator.item()) / current_step
                 )
                 loss_discriminator.backward()
 
@@ -390,7 +390,7 @@ class BATMTrainer:
                     loss_generator = -1.0 * torch.mean(p_fake)
                     loss_generator.backward()
                     self.state.train_loss_generator = (
-                        self.state.n_critic * (self.state.train_loss_generator * (current_step - 1) / self.state.n_critic + loss_generator) / current_step
+                        self.state.n_critic * (self.state.train_loss_generator * (current_step - 1) / self.state.n_critic + loss_generator.item()) / current_step
                     )
                     self.optimizer_generator.step()
 
@@ -398,7 +398,7 @@ class BATMTrainer:
                     loss_encoder = torch.mean(p_real)
                     loss_encoder.backward()
                     self.state.train_loss_encoder = (
-                        self.state.n_critic * (self.state.train_loss_encoder * (current_step - 1) / self.state.n_critic + loss_encoder) / current_step
+                        self.state.n_critic * (self.state.train_loss_encoder * (current_step - 1) / self.state.n_critic + loss_encoder.item()) / current_step
                     )
                     self.optimizer_encoder.step()
 
@@ -504,6 +504,13 @@ class BATMTrainer:
         u_mass = u_mass_coherence_model.get_coherence()
         return {"c_v": c_v, "c_uci": c_uci, "u_mass": u_mass}
     
+    def save_trainer_state(self, save_directory: str):
+        trainer_state_file = os.path.join(save_directory, self.TRAINER_STATE_FILE)
+        def _to_json_string(state):
+            return json.dumps(state, indent=2, sort_keys=True) + "\n"
+        with open(trainer_state_file, "w") as writer:
+            writer.write(_to_json_string(self.state.to_dict()))
+    
     def save_optimizer_state(self, save_directory: str):
         optimizer_state_file = os.path.join(save_directory, self.OPTIMIZER_STATE_FILE)
         torch.save({
@@ -521,3 +528,12 @@ class BATMTrainer:
         self.optimizer_encoder.load_state_dict(optimizer_state["encoder"])
         self.optimizer_generator.load_state_dict(optimizer_state["generator"])
         self.optimizer_discriminator.load_state_dict(optimizer_state["discriminator"])
+    
+    def get_last_checkpoint(self):
+        re_checkpoint = re.compile(r"^" + self.CHECKPOINT_PREFIX + r"\-(\d+)$")
+        contents = [
+            path for path in os.listdir(self.output_dir)
+            if re_checkpoint.search(path) is not None
+            and os.path.isdir(os.path.join(self.output_dir, path))
+        ]
+        return os.path.join(self.output_dir, max(contents, key=lambda x: int(re_checkpoint.search(x).groups()[0])))
