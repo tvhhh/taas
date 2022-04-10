@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 
 CHECKPOINT_PREFIX = "checkpoint"
 METRIC_PREFIX = "eval"
+RESULTS_PREFIX = "results"
 
 OUTPUTS_FILE = "outputs.txt"
 RESULTS_FILE = "results.json"
@@ -239,7 +240,7 @@ def _test(
         test_set[args.data_label_name],
         return_precision_and_recall=args.output_precision_recall
     )
-    _save_result_to_file(f"{args.result_dir}-{checkpoint_name}", rouge_scores)
+    _save_result_to_file(f"{args.result_dir}/{RESULTS_PREFIX}-{checkpoint_name}", rouge_scores)
 
     return rouge_scores
 

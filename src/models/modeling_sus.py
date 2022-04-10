@@ -228,7 +228,7 @@ class SusModel(SusPreTrainedModel):
         self.decoder = PegasusDecoder(config, self.shared)
 
         self.neural_topic_model = None
-        if config.use_ntm is not None:
+        if config.use_ntm:
             if config.use_ntm == "gsm":
                 self.neural_topic_model = GSM(**config.ntm_config)
             elif config.use_ntm == "batm":
@@ -356,7 +356,7 @@ class SusModel(SusPreTrainedModel):
             )
         
         # Integrate latent topics distribution into encoder outputs
-        if self.config.use_ntm is not None:
+        if self.config.use_ntm:
             _, theta = self.neural_topic_model(bag_of_words)
 
             # Expand topic tensors to match with expanded batch in beam search
@@ -592,7 +592,7 @@ class SusForConditionalGeneration(SusPreTrainedModel):
             encoder = self.get_encoder()
             # 2. prepare encoder args and encoder kwargs from model kwargs
             encoder_args = (inputs_tensor,)
-            irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
+            irrelevant_prefix = ["decoder_", "cross_attn", "use_cache", "bag_of_words"]
             encoder_kwargs = {
                 argument: value
                 for argument, value in model_kwargs.items()
