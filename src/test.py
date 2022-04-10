@@ -228,7 +228,7 @@ def _test(
         tokenizer,
     )
     _save_output_to_file(
-        f"{args.result_dir}-{checkpoint_name}",
+        f"{args.result_dir}/{RESULTS_PREFIX}-{checkpoint_name}",
         test_set,
         args.data_input_name,
         args.data_label_name,
