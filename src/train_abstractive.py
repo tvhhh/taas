@@ -116,7 +116,9 @@ def train_abs(args: Namespace):
         )
         sus = SusForConditionalGeneration(config)
     
-    if args.pretrained_model_path is None and args.pretrained_ntm_path is not None:
+    if sus.config.use_ntm and \
+        args.pretrained_pegasus and \
+        args.pretrained_ntm_path is not None:
         sus.load_pretrained_ntm(args.pretrained_ntm_path)
     
     # Freeze embeddings
