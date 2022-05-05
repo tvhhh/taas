@@ -1,6 +1,4 @@
-import json
 import numpy as np
-import os
 import torch
 import torch.nn as nn
 
@@ -141,8 +139,17 @@ class BATM(NeuralTopicModel):
     def loss(self, p_real, p_fake):
         return torch.mean(p_fake) - torch.mean(p_real)
     
-    def get_top_topic_words(self, topk=10):
+    def get_topic_words(self, topk=10):
         theta = torch.eye(self.config["n_topics"], device=self.device)
+        word_dist = self.generator_network.inference(theta)
+        _, word_ids = torch.topk(word_dist, topk, dim=1)
+        word_ids = word_ids.cpu().tolist()
+        return word_ids
+    
+    def sample(self, x, topk=10):
+        x = x.to(self.device)
+        d_real = self.encoder_network(x)
+        theta = d_real[:, :self.config["n_topics"]]
         word_dist = self.generator_network.inference(theta)
         _, word_ids = torch.topk(word_dist, topk, dim=1)
         word_ids = word_ids.cpu().tolist()

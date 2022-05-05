@@ -13,6 +13,22 @@ from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from typing import List
 
+SAMPLED_CONTEXT = [
+    ["liverpool", "chelsea", "arsenal", "league", "cup", "football"],
+    ["police", "gun", "arrest", "court", "crime", "officer", "accuse"],
+    ["bank", "stock", "price", "market", "money"]
+]
+
+
+def _doc2bow(dataset: DocDataset, docs: List[List[str]]):
+    vec = torch.zeros(len(docs), dataset.vocab_size)
+    for i, doc in enumerate(docs):
+        word_freq = dataset.dictionary.doc2bow(doc)
+        if len(word_freq) > 0:
+            ids, vals = zip(*word_freq)
+            vec[i, list(ids)] = torch.tensor(list(vals)).float()
+    return vec
+
 
 class TrainerState:
     def __init__(self, **kwargs):
@@ -147,18 +163,23 @@ class NTMTrainer:
                 # Break the training loop when reaching num_train_steps
                 if current_step == self.state.total_train_steps: break
 
-    def evaluate(self):
-        metrics, topic_words = self.evaluation_loop()
+    def evaluate(self, sampled_context=None):
+        if sampled_context is None:
+            sampled_context = SAMPLED_CONTEXT
+        
+        metrics, topic_words, sampled_words = self.evaluation_loop(sampled_context)
         metrics["train_loss"] = self.state.train_loss
 
         self.state.eval_results.append(metrics)
 
         fmt_output = f"Step {self.state.train_progress}:\n"
-        if topic_words is not None:
-            for topic_i_words in topic_words:
-                fmt_output += str(topic_i_words) + "\n"
-            fmt_output += "-"*100 + "\n"
-        fmt_output += str(metrics) + "\n" + "="*100
+        fmt_output += str(metrics) + "\n" + "-"*100 + "\n"
+        for topic_i_words in topic_words:
+            fmt_output += str(topic_i_words) + "\n"
+        fmt_output += "-"*100 + "\n" + "Sampled words:\n"
+        for sampled_i_context, sampled_i_words in zip(sampled_context, sampled_words):
+            fmt_output += str(sampled_i_context) + " -> " + str(sampled_i_words) + "\n"
+        fmt_output += "="*100
 
         with open(os.path.join(self.logging_dir, self.LOGGING_FILE), "a+") as writer:
             writer.write(fmt_output + "\n")
@@ -168,7 +189,7 @@ class NTMTrainer:
         
         self.logger(self.state.train_progress, *tuple(metrics.values()))
     
-    def evaluation_loop(self):
+    def evaluation_loop(self, sampled_context: List[List[str]]):
         self.model.eval()
 
         if self.eval_progress is None:
@@ -187,17 +208,24 @@ class NTMTrainer:
                 self.eval_progress.update(1)
         eval_loss /= len(self.eval_loader)
 
-        topic_words = self.model.get_top_topic_words()
+        topic_words = self.model.get_topic_words()
         topic_words = [
             [self.train_set.dictionary.id2token[word_id] for word_id in topic_i_words]
             for topic_i_words in topic_words
         ]
 
+        bow = _doc2bow(self.train_set, sampled_context)
+        sampled_words = self.model.sample(bow)
+        sampled_words = [
+            [self.train_set.dictionary.id2token[word_id] for word_id in sampled_i_words]
+            for sampled_i_words in sampled_words
+        ]
+
         if self.compute_metrics:
             ntm_metrics = self.compute_ntm_metrics(topic_words)
-            return {**ntm_metrics, "eval_loss": eval_loss}, topic_words
+            return {**ntm_metrics, "eval_loss": eval_loss}, topic_words, sampled_words
         else:
-            return {"eval_loss": eval_loss}, topic_words
+            return {"eval_loss": eval_loss}, topic_words, sampled_words
 
     def compute_ntm_metrics(self, topic_words: List[List[str]]):
         c_v_coherence_model, c_uci_coherence_model, u_mass_coherence_model = (
@@ -417,8 +445,11 @@ class BATMTrainer:
                 # Break the training loop when reaching num_train_steps
                 if current_step == self.state.total_train_steps: break
     
-    def evaluate(self):
-        metrics, topic_words = self.evaluation_loop()
+    def evaluate(self, sampled_context=None):
+        if sampled_context is None:
+            sampled_context = SAMPLED_CONTEXT
+
+        metrics, topic_words, sampled_words = self.evaluation_loop(sampled_context)
         
         metrics["train_loss_D"] = self.state.train_loss_discriminator
         metrics["train_loss_E"] = self.state.train_loss_encoder
@@ -427,11 +458,13 @@ class BATMTrainer:
         self.state.eval_results.append(metrics)
 
         fmt_output = f"Step {self.state.train_progress}:\n"
-        if topic_words is not None:
-            for topic_i_words in topic_words:
-                fmt_output += str(topic_i_words) + "\n"
-            fmt_output += "-"*100 + "\n"
-        fmt_output += str(metrics) + "\n" + "="*100
+        fmt_output += str(metrics) + "\n" + "-"*100 + "\n"
+        for topic_i_words in topic_words:
+            fmt_output += str(topic_i_words) + "\n"
+        fmt_output += "-"*100 + "\n" + "Sampled words:\n"
+        for sampled_i_context, sampled_i_words in zip(sampled_context, sampled_words):
+            fmt_output += str(sampled_i_context) + " -> " + str(sampled_i_words) + "\n"
+        fmt_output += "="*100
 
         with open(os.path.join(self.logging_dir, self.LOGGING_FILE), "a+") as writer:
             writer.write(fmt_output + "\n")
@@ -441,7 +474,7 @@ class BATMTrainer:
         
         self.logger(self.state.train_progress, *tuple(metrics.values()))
     
-    def evaluation_loop(self):
+    def evaluation_loop(self, sampled_context: List[List[str]]):
         self.model.eval()
 
         if self.eval_progress is None:
@@ -468,10 +501,17 @@ class BATMTrainer:
         eval_loss_generator /= len(self.eval_loader)
         eval_loss_encoder /= len(self.eval_loader)
 
-        topic_words = self.model.get_top_topic_words()
+        topic_words = self.model.get_topic_words()
         topic_words = [
             [self.train_set.dictionary.id2token[word_id] for word_id in topic_i_words]
             for topic_i_words in topic_words
+        ]
+
+        bow = _doc2bow(self.train_set, sampled_context)
+        sampled_words = self.model.sample(bow)
+        sampled_words = [
+            [self.train_set.dictionary.id2token[word_id] for word_id in sampled_i_words]
+            for sampled_i_words in sampled_words
         ]
 
         if self.compute_metrics:
@@ -481,13 +521,13 @@ class BATMTrainer:
                 "eval_loss_D": eval_loss_discriminator,
                 "eval_loss_E": eval_loss_encoder,
                 "eval_loss_G": eval_loss_generator,
-            }, topic_words
+            }, topic_words, sampled_words
         else:
             return {
                 "eval_loss_D": eval_loss_discriminator,
                 "eval_loss_E": eval_loss_encoder,
                 "eval_loss_G": eval_loss_generator,
-            }, topic_words
+            }, topic_words, sampled_words
 
     def compute_ntm_metrics(self, topic_words: List[List[str]]):
         c_v_coherence_model, c_uci_coherence_model, u_mass_coherence_model = (

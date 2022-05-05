@@ -1,5 +1,3 @@
-import json
-import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -16,20 +14,21 @@ class InferenceNetwork(nn.Module):
         dropout=0.0,
     ):
         super().__init__()
-
-        self.activation = nn.ReLU()
-        self.dropout = nn.Dropout(dropout)
         
         self.encoder = nn.Sequential(*(
-            nn.Sequential(nn.Linear(h_in, h_out), self.activation, self.dropout)
-            for h_in, h_out in zip(type(hidden_sizes)([vocab_size]) + hidden_sizes[:-1], hidden_sizes)
+            nn.Sequential(
+                nn.Linear(h_in, h_out),
+                nn.BatchNorm1d(h_out),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+            ) for h_in, h_out in zip(type(hidden_sizes)([vocab_size]) + hidden_sizes[:-1], hidden_sizes)
         ))
 
         self.fc_mu = nn.Linear(hidden_sizes[-1], n_topics)
-        self.batchnorm_mu = nn.BatchNorm1d(n_topics, affine=False)
+        self.batchnorm_mu = nn.BatchNorm1d(n_topics)
 
         self.fc_logvar = nn.Linear(hidden_sizes[-1], n_topics)
-        self.batchnorm_logvar = nn.BatchNorm1d(n_topics, affine=False)
+        self.batchnorm_logvar = nn.BatchNorm1d(n_topics)
     
     def forward(self, x):
         h = self.encoder(x)
@@ -53,7 +52,7 @@ class GeneratorNetwork(nn.Module):
         )
         nn.init.xavier_uniform_(self.topic_word_dist)
 
-        self.batchnorm_generator = nn.BatchNorm1d(vocab_size, affine=False)
+        self.batchnorm_generator = nn.BatchNorm1d(vocab_size)
     
     def forward(self, z):
         return self.batchnorm_generator(torch.matmul(z, self.topic_word_dist))
@@ -97,6 +96,7 @@ class GSM(NeuralTopicModel):
 
         self.inference_network = InferenceNetwork(vocab_size, n_topics, hidden_sizes, dropout)
         self.generator_network = GeneratorNetwork(vocab_size, n_topics)
+        self.fc_mixture = nn.Linear(n_topics, n_topics)
 
     def reparameterize(self, mu, logvar):
         std = torch.exp(logvar * 0.5)
@@ -109,7 +109,7 @@ class GSM(NeuralTopicModel):
 
         # Latent topics distribution
         z = self.reparameterize(posterior_mean, posterior_logvar)
-        theta = F.softmax(z, dim=1)
+        theta = F.softmax(self.fc_mixture(z), dim=1)
 
         x_recons = self.generator_network(theta)
         word_dist = F.softmax(x_recons, dim=1)
@@ -135,8 +135,18 @@ class GSM(NeuralTopicModel):
 
         return loss
     
-    def get_top_topic_words(self, topk=10):
+    def get_topic_words(self, topk=10):
         theta = torch.eye(self.config["n_topics"], device=self.device)
+        word_dist = F.softmax(self.generator_network(theta), dim=1)
+        _, word_ids = torch.topk(word_dist, topk, dim=1)
+        word_ids = word_ids.cpu().tolist()
+        return word_ids
+    
+    def sample(self, x, topk=10):
+        x = x.to(self.device)
+        posterior_mean, posterior_logvar = self.inference_network(x)
+        z = self.reparameterize(posterior_mean, posterior_logvar)
+        theta = F.softmax(self.fc_mixture(z), dim=1)
         word_dist = F.softmax(self.generator_network(theta), dim=1)
         _, word_ids = torch.topk(word_dist, topk, dim=1)
         word_ids = word_ids.cpu().tolist()
